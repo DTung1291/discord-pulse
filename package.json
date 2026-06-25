@@ -1,0 +1,22 @@
+{
+  "name": "discord-pulse",
+  "version": "1.0.0",
+  "description": "A self-hosted Discord server analytics bot with realtime dashboard and scheduled reports",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "bot": "node src/bot/index.js",
+    "dashboard": "node src/dashboard/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "discord.js": "^14.21.0",
+    "dotenv": "^16.5.0",
+    "express": "^4.21.2",
+    "node-cron": "^3.0.3"
+  }
+}

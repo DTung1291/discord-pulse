@@ -1,0 +1,102 @@
+:root {
+  --bg: #0b1220;
+  --panel: #111a2e;
+  --panel-alt: #17233d;
+  --text: #e7ecf8;
+  --muted: #a5b1ca;
+  --accent: #2ec5b6;
+  --accent-2: #ef8354;
+  --border: #223052;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  color: var(--text);
+  background: radial-gradient(circle at 10% 10%, #1a2747, var(--bg) 50%),
+    radial-gradient(circle at 80% 0%, #1c3d4f, transparent 40%);
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 44px);
+}
+
+.hero p {
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 24px 0;
+}
+
+.card {
+  background: linear-gradient(135deg, var(--panel), var(--panel-alt));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.card .label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.card .value {
+  margin-top: 8px;
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.panel {
+  background: rgba(17, 26, 46, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.panel.full {
+  grid-column: 1 / -1;
+}
+
+.panel h2 {
+  margin-top: 0;
+  font-size: 18px;
+}
+
+#channel-ranking-list {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+}
+
+#channel-ranking-list li {
+  margin: 8px 0;
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Discord Pulse Dashboard</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <main class="container">
+      <header class="hero">
+        <h1>Discord Pulse</h1>
+        <p>Realtime analytics from your Discord community.</p>
+      </header>
+
+      <section class="cards" id="summary-cards"></section>
+
+      <section class="grid">
+        <article class="panel">
+          <h2>Message Volume (30 days)</h2>
+          <canvas id="messageVolumeChart"></canvas>
+        </article>
+
+        <article class="panel">
+          <h2>Member Growth (30 days)</h2>
+          <canvas id="memberGrowthChart"></canvas>
+        </article>
+
+        <article class="panel full">
+          <h2>Channel Rankings (7 days)</h2>
+          <ol id="channel-ranking-list"></ol>
+        </article>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
