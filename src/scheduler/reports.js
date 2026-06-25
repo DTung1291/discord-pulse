@@ -20,6 +20,50 @@ function formatChannelRanking(rows) {
     .join("\n");
 }
 
+function buildDailyReportContent(queries, days = 1) {
+  const summary = queries.getSummary(days);
+  return [
+    `**Daily Discord Pulse Report (${days}d)**`,
+    `Messages: ${summary.messages}`,
+    `New members: ${summary.joins}`,
+    `Leaves: ${summary.leaves}`,
+    `Active members: ${summary.active_members}`,
+  ].join("\n");
+}
+
+function buildWeeklyReportContent(queries) {
+  const inviteBoard = queries.getInviteLeaderboard(7, 10);
+  const channelBoard = queries.getChannelRankings(7, 10);
+  const ghosts = queries.getGhostMembers(30, 10);
+
+  return [
+    "**Weekly Discord Pulse Report**",
+    "",
+    "Invite Leaderboard:",
+    formatLeaderboard(inviteBoard),
+    "",
+    "Channel Rankings:",
+    formatChannelRanking(channelBoard),
+    "",
+    "Ghost Members (no messages in last 30 days):",
+    ghosts.length
+      ? ghosts.map((u) => `- ${u.username} (${u.user_id})`).join("\n")
+      : "None",
+  ].join("\n");
+}
+
+function buildGhostMembersContent(queries, days = 30, limit = 20) {
+  const ghosts = queries.getGhostMembers(days, limit);
+  if (!ghosts.length) {
+    return `**Ghost Members (${days}d)**\nNone`;
+  }
+
+  return [
+    `**Ghost Members (${days}d)**`,
+    ghosts.map((u) => `- ${u.username} (${u.user_id})`).join("\n"),
+  ].join("\n");
+}
+
 async function postDailyReport({ client, queries, reportChannelId }) {
   if (!reportChannelId) {
     return;
@@ -30,14 +74,7 @@ async function postDailyReport({ client, queries, reportChannelId }) {
     return;
   }
 
-  const summary = queries.getSummary(1);
-  const content = [
-    "**Daily Discord Pulse Report**",
-    `Messages: ${summary.messages}`,
-    `New members: ${summary.joins}`,
-    `Leaves: ${summary.leaves}`,
-    `Active members: ${summary.active_members}`,
-  ].join("\n");
+  const content = buildDailyReportContent(queries, 1);
 
   await channel.send({ content });
 }
@@ -52,24 +89,7 @@ async function postWeeklyReport({ client, queries, reportChannelId }) {
     return;
   }
 
-  const inviteBoard = queries.getInviteLeaderboard(7, 10);
-  const channelBoard = queries.getChannelRankings(7, 10);
-  const ghosts = queries.getGhostMembers(30, 10);
-
-  const content = [
-    "**Weekly Discord Pulse Report**",
-    "",
-    "Invite Leaderboard:",
-    formatLeaderboard(inviteBoard),
-    "",
-    "Channel Rankings:",
-    formatChannelRanking(channelBoard),
-    "",
-    "Ghost Members (no messages in last 30 days):",
-    ghosts.length
-      ? ghosts.map((u) => `- ${u.username} (${u.user_id})`).join("\n")
-      : "None",
-  ].join("\n");
+  const content = buildWeeklyReportContent(queries);
 
   await channel.send({ content });
 }
@@ -98,4 +118,7 @@ module.exports = {
   startReportScheduler,
   postDailyReport,
   postWeeklyReport,
+  buildDailyReportContent,
+  buildWeeklyReportContent,
+  buildGhostMembersContent,
 };
