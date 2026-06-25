@@ -9,6 +9,7 @@ A self-hosted Discord server analytics bot with a realtime dashboard and schedul
 - **Channel Popularity** — rank channels by activity, voice channel time tracking
 - **User Engagement** — identify active members vs ghosts, per-user stats over 7/30 days
 - **Discord Reports** — automated embed reports posted to a designated channel via cron
+- **Slash Commands** — on-demand reports via `/pulse-summary`, `/pulse-daily`, `/pulse-weekly`, `/pulse-ghosts`
 - **Web Dashboard** — realtime charts and filters via a local web UI
 
 ## Tech Stack
@@ -30,7 +31,8 @@ discord-pulse/
 │   │   └── events/
 │   │       ├── guildMemberAdd.js
 │   │       ├── guildMemberRemove.js
-│   │       └── messageCreate.js
+│   │       ├── messageCreate.js
+│   │       └── interactionCreate.js
 │   ├── db/
 │   │   ├── schema.js         # DB init & migrations
 │   │   └── queries.js        # Reusable query helpers
@@ -54,6 +56,7 @@ discord-pulse/
   - `GUILD_MEMBERS`
   - `GUILD_MESSAGES`
   - `MESSAGE_CONTENT`
+  - `GUILD_INVITES`
 
 ### Installation
 
@@ -73,7 +76,14 @@ DISCORD_TOKEN=your_bot_token_here
 GUILD_ID=your_server_id_here
 REPORT_CHANNEL_ID=channel_id_for_scheduled_reports
 DASHBOARD_PORT=3000
+DB_PATH=./data/discord-pulse.db
+TIMEZONE=UTC
+ADMIN_ROLE_IDS=comma_separated_role_ids_for_weekly_command
 ```
+
+Notes:
+- `ADMIN_ROLE_IDS` is optional. If set, only members with one of these role IDs can run `/pulse-weekly`.
+- Leave `ADMIN_ROLE_IDS` empty to allow all members to run slash reports.
 
 ### Run
 
@@ -96,6 +106,15 @@ Reports are posted automatically to `REPORT_CHANNEL_ID`:
 
 - **Daily** — message activity summary, new members
 - **Weekly** — invite leaderboard, channel rankings, ghost member list
+
+## Slash Commands
+
+The bot registers guild slash commands automatically on startup:
+
+- `/pulse-summary [days]` — activity summary for 1-30 days
+- `/pulse-daily` — quick daily summary
+- `/pulse-weekly` — weekly report with invite/channel/ghost stats
+- `/pulse-ghosts [days]` — inactive members list
 
 ## License
 
