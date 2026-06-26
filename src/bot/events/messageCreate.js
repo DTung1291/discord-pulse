@@ -1,5 +1,5 @@
 function onMessageCreate(message, context) {
-  const { queries, guildId } = context;
+  const { queries, guildId, ambassadorPostChannelId } = context;
 
   if (message.author.bot) {
     return;
@@ -17,6 +17,24 @@ function onMessageCreate(message, context) {
     userId: message.author.id,
     channelId: message.channel.id,
     createdAt: message.createdAt.toISOString(),
+  });
+
+  if (!ambassadorPostChannelId || message.channel.id !== ambassadorPostChannelId) {
+    return;
+  }
+
+  const ambassador = queries.getAmbassadorById(message.author.id);
+  if (!ambassador) {
+    return;
+  }
+
+  queries.trackAmbassadorPost({
+    messageId: message.id,
+    ambassadorId: message.author.id,
+    ambassadorName: ambassador.ambassador_name || message.author.username,
+    channelId: message.channel.id,
+    content: message.content || "",
+    postedAt: message.createdAt.toISOString(),
   });
 }
 

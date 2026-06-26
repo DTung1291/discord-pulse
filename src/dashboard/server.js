@@ -69,6 +69,39 @@ function startDashboard(options = {}) {
     res.json(queries.getAmbassadorPerformance(days, limit));
   });
 
+  app.get("/api/ambassador-invites", (_req, res) => {
+    res.json(queries.listAmbassadorInvites());
+  });
+
+  app.get("/api/ambassador-invitees", (req, res) => {
+    const ambassadorId = (req.query.ambassadorId || "").toString().trim();
+    if (!ambassadorId) {
+      res.status(400).json({ error: "ambassadorId is required" });
+      return;
+    }
+
+    const days = toInt(req.query.days, 30);
+    const limit = toInt(req.query.limit, 20);
+    res.json(queries.getAmbassadorInvitees(ambassadorId, days, limit));
+  });
+
+  app.get("/api/ambassador-posts", (req, res) => {
+    const channelId =
+      (req.query.channelId || process.env.AMBASSADOR_POST_CHANNEL_ID || "1518242290982719698")
+        .toString()
+        .trim();
+
+    if (!channelId) {
+      res.status(400).json({ error: "channelId is required" });
+      return;
+    }
+
+    const days = toInt(req.query.days, 30);
+    const ambassadorLimit = toInt(req.query.ambassadorLimit, 20);
+    const postsPerAmbassador = toInt(req.query.postsPerAmbassador, 5);
+    res.json(queries.getAmbassadorPostsByChannel(channelId, days, ambassadorLimit, postsPerAmbassador));
+  });
+
   app.listen(port, () => {
     console.log(`Dashboard running on http://localhost:${port}`);
   });

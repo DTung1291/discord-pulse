@@ -48,6 +48,7 @@ async function onGuildMemberAdd(member, context) {
     username: member.user.tag,
     inviterId,
     joinedAt: new Date().toISOString(),
+    isBot: member.user.bot,
   });
 }
 

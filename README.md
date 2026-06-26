@@ -10,6 +10,7 @@ A self-hosted Discord server analytics bot with a realtime dashboard and schedul
 - **User Engagement** — identify active members vs ghosts, per-user stats over 7/30 days
 - **Discord Reports** — automated embed reports posted to a designated channel via cron
 - **Ambassador Invite Tracking** — auto-provision unique ambassador invites and track weekly ambassador performance
+- **Ambassador Post Tracking** — capture ambassador posts in a dedicated channel and show per-ambassador post history on dashboard
 - **Slash Commands** — on-demand reports via `/pulse-summary`, `/pulse-daily`, `/pulse-weekly`, `/pulse-ghosts`, `/pulse-ambassadors`
 - **Web Dashboard** — realtime charts and filters via a local web UI
 
@@ -82,6 +83,8 @@ TIMEZONE=UTC
 ADMIN_ROLE_IDS=comma_separated_role_ids_for_weekly_command
 AMBASSADOR_ROLE_IDS=comma_separated_role_ids_for_ambassador_group
 AMBASSADOR_INVITE_CHANNEL_ID=channel_id_to_create_ambassador_invites
+AMBASSADOR_POST_CHANNEL_ID=1518242290982719698
+AMBASSADOR_POST_BACKFILL_LIMIT=2000
 ```
 
 Notes:
@@ -89,6 +92,8 @@ Notes:
 - Leave `ADMIN_ROLE_IDS` empty to allow all members to run slash reports.
 - `AMBASSADOR_ROLE_IDS` is optional. If empty, roles containing `ambassador` in name are auto-detected.
 - `AMBASSADOR_INVITE_CHANNEL_ID` should be a text channel where the bot can create invites.
+- `AMBASSADOR_POST_CHANNEL_ID` is the channel to track ambassador post content. Defaults to `1518242290982719698`.
+- `AMBASSADOR_POST_BACKFILL_LIMIT` controls how many old messages are scanned on startup to backfill ambassador posts.
 
 ### Run
 
@@ -112,6 +117,7 @@ Dashboard includes:
 - Channel rankings
 - Invite leaderboard (current snapshot)
 - Ambassador performance (7-day leaderboard)
+- Ambassador performance + recent ambassador posts in channel `1518242290982719698` (integrated in one section)
 
 ## Scheduled Reports
 
@@ -129,6 +135,7 @@ The bot registers guild slash commands automatically on startup:
 - `/pulse-weekly` — weekly report with invite/channel/ghost stats
 - `/pulse-ghosts [days]` — inactive members list
 - `/pulse-ambassadors [days]` — ambassador invite performance leaderboard
+- `/pulse-ambassador-users [member] [days] [limit]` — list users invited by an ambassador with ghost/active status
 
 ## Security Note
 

@@ -89,6 +89,27 @@ function buildAmbassadorPerformanceContent(queries, days = 7, limit = 20) {
   ].join("\n");
 }
 
+function buildAmbassadorInviteesContent(queries, ambassadorId, days = 30, limit = 20) {
+  const rows = queries.getAmbassadorInvitees(ambassadorId, days, limit);
+  const title = `**Ambassador Invitees (${days}d) - <@${ambassadorId}>**`;
+
+  if (!rows.length) {
+    return [title, "No attributed joined users in this period."].join("\n");
+  }
+
+  return [
+    title,
+    rows
+      .map((row, idx) => {
+        const isGhost = Number(row.total_messages || 0) === 0;
+        const status = isGhost ? "GHOST" : "ACTIVE";
+        const membership = row.still_in_server ? "in-server" : "left";
+        return `${idx + 1}. <@${row.user_id}> (${membership}) - ${status} - total messages: ${row.total_messages} - joined: ${row.joined_at}`;
+      })
+      .join("\n"),
+  ].join("\n");
+}
+
 async function postDailyReport({ client, queries, reportChannelId }) {
   if (!reportChannelId) {
     return;
@@ -147,4 +168,5 @@ module.exports = {
   buildWeeklyReportContent,
   buildGhostMembersContent,
   buildAmbassadorPerformanceContent,
+  buildAmbassadorInviteesContent,
 };

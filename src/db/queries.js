@@ -1,21 +1,23 @@
 function createQueries(db) {
   const upsertMemberStmt = db.prepare(`
-    INSERT INTO members (user_id, username, joined_at, left_at, inviter_id)
-    VALUES (@user_id, @username, @joined_at, NULL, @inviter_id)
+    INSERT INTO members (user_id, username, joined_at, left_at, inviter_id, is_bot)
+    VALUES (@user_id, @username, @joined_at, NULL, @inviter_id, @is_bot)
     ON CONFLICT(user_id) DO UPDATE SET
       username = excluded.username,
       joined_at = excluded.joined_at,
       left_at = NULL,
-      inviter_id = excluded.inviter_id
+      inviter_id = excluded.inviter_id,
+      is_bot = excluded.is_bot
   `);
 
   const upsertMemberSnapshotStmt = db.prepare(`
-    INSERT INTO members (user_id, username, joined_at, left_at, inviter_id)
-    VALUES (@user_id, @username, @joined_at, NULL, NULL)
+    INSERT INTO members (user_id, username, joined_at, left_at, inviter_id, is_bot)
+    VALUES (@user_id, @username, @joined_at, NULL, NULL, @is_bot)
     ON CONFLICT(user_id) DO UPDATE SET
       username = excluded.username,
       joined_at = COALESCE(members.joined_at, excluded.joined_at),
-      left_at = NULL
+      left_at = NULL,
+      is_bot = excluded.is_bot
   `);
 
   const selectMemberByIdStmt = db.prepare(`
@@ -91,12 +93,31 @@ function createQueries(db) {
     WHERE active = 1
   `);
 
-  function trackMemberJoin({ userId, username, inviterId, joinedAt }) {
+  const getAmbassadorByIdStmt = db.prepare(`
+    SELECT ambassador_id, ambassador_name
+    FROM ambassador_invites
+    WHERE ambassador_id = ? AND active = 1
+    LIMIT 1
+  `);
+
+  const insertAmbassadorPostStmt = db.prepare(`
+    INSERT INTO ambassador_posts (message_id, ambassador_id, ambassador_name, channel_id, content, posted_at)
+    VALUES (@message_id, @ambassador_id, @ambassador_name, @channel_id, @content, @posted_at)
+    ON CONFLICT(message_id) DO UPDATE SET
+      ambassador_id = excluded.ambassador_id,
+      ambassador_name = excluded.ambassador_name,
+      channel_id = excluded.channel_id,
+      content = excluded.content,
+      posted_at = excluded.posted_at
+  `);
+
+  function trackMemberJoin({ userId, username, inviterId, joinedAt, isBot }) {
     const payload = {
       user_id: userId,
       username,
       joined_at: joinedAt,
       inviter_id: inviterId || null,
+      is_bot: isBot ? 1 : 0,
     };
 
     const tx = db.transaction(() => {
@@ -135,6 +156,7 @@ function createQueries(db) {
           user_id: member.userId,
           username: member.username,
           joined_at: member.joinedAt,
+          is_bot: member.isBot ? 1 : 0,
         });
       }
     });
@@ -160,6 +182,7 @@ function createQueries(db) {
           user_id: member.userId,
           username: member.username,
           joined_at: member.joinedAt,
+          is_bot: member.isBot ? 1 : 0,
         });
 
         if (!hasJoinEvent || (existing && existing.left_at)) {
@@ -225,6 +248,21 @@ function createQueries(db) {
     return listAmbassadorInvitesStmt.all();
   }
 
+  function getAmbassadorById(ambassadorId) {
+    return getAmbassadorByIdStmt.get(ambassadorId) || null;
+  }
+
+  function trackAmbassadorPost({ messageId, ambassadorId, ambassadorName, channelId, content, postedAt }) {
+    insertAmbassadorPostStmt.run({
+      message_id: messageId,
+      ambassador_id: ambassadorId,
+      ambassador_name: ambassadorName,
+      channel_id: channelId,
+      content: content || "",
+      posted_at: postedAt,
+    });
+  }
+
   function getSummary(days = 7) {
     const rows = db
       .prepare(
@@ -233,7 +271,9 @@ function createQueries(db) {
           (SELECT COUNT(*) FROM message_events WHERE created_at >= datetime('now', ?)) AS messages,
           (SELECT COUNT(*) FROM join_events WHERE joined_at >= datetime('now', ?)) AS joins,
           (SELECT COUNT(*) FROM leave_events WHERE left_at >= datetime('now', ?)) AS leaves,
-          (SELECT COUNT(*) FROM members WHERE left_at IS NULL) AS active_members
+          (SELECT COUNT(*) FROM members WHERE left_at IS NULL) AS active_members,
+          (SELECT COUNT(*) FROM members WHERE left_at IS NULL) AS server_members,
+          (SELECT COUNT(*) FROM members WHERE left_at IS NULL AND is_bot = 0) AS human_members
       `
       )
       .get(`-${days} days`, `-${days} days`, `-${days} days`);
@@ -313,7 +353,7 @@ function createQueries(db) {
           FROM message_events
           WHERE created_at >= datetime('now', ?)
         ) msg ON m.user_id = msg.user_id
-        WHERE m.left_at IS NULL AND msg.user_id IS NULL
+        WHERE m.left_at IS NULL AND m.is_bot = 0 AND msg.user_id IS NULL
         ORDER BY m.joined_at ASC
         LIMIT ?
       `
@@ -377,6 +417,29 @@ function createQueries(db) {
       .all(`-${days} days`, limit);
   }
 
+  function getAmbassadorInvitees(ambassadorId, days = 30, limit = 20) {
+    return db
+      .prepare(
+        `
+        SELECT
+          je.user_id,
+          COALESCE(m.username, je.user_id) AS username,
+          je.joined_at,
+          CASE WHEN m.left_at IS NULL THEN 1 ELSE 0 END AS still_in_server,
+          COALESCE((SELECT COUNT(*) FROM message_events me WHERE me.user_id = je.user_id), 0) AS total_messages,
+          COALESCE((SELECT MAX(me.created_at) FROM message_events me WHERE me.user_id = je.user_id), '') AS last_message_at
+        FROM join_events je
+        LEFT JOIN members m ON m.user_id = je.user_id
+        WHERE je.inviter_id = ?
+          AND je.joined_at >= datetime('now', ?)
+          AND COALESCE(m.is_bot, 0) = 0
+        ORDER BY je.joined_at DESC
+        LIMIT ?
+      `
+      )
+      .all(ambassadorId, `-${days} days`, limit);
+  }
+
   function getMemberGrowth(days = 30) {
     const joins = db
       .prepare(
@@ -403,6 +466,73 @@ function createQueries(db) {
     return { joins, leaves };
   }
 
+  function getAmbassadorPostsByChannel(channelId, days = 30, ambassadorLimit = 20, postsPerAmbassador = 5) {
+    const ambassadors = db
+      .prepare(
+        `
+        SELECT
+          ambassador_id,
+          MAX(ambassador_name) AS ambassador_name,
+          COUNT(*) AS post_count,
+          MAX(posted_at) AS last_posted_at
+        FROM ambassador_posts
+        WHERE channel_id = ?
+          AND posted_at >= datetime('now', ?)
+        GROUP BY ambassador_id
+        ORDER BY post_count DESC, last_posted_at DESC
+        LIMIT ?
+      `
+      )
+      .all(channelId, `-${days} days`, ambassadorLimit);
+
+    if (!ambassadors.length) {
+      return [];
+    }
+
+    const details = db
+      .prepare(
+        `
+        WITH ranked_posts AS (
+          SELECT
+            message_id,
+            ambassador_id,
+            ambassador_name,
+            channel_id,
+            content,
+            posted_at,
+            ROW_NUMBER() OVER (PARTITION BY ambassador_id ORDER BY posted_at DESC) AS rn
+          FROM ambassador_posts
+          WHERE channel_id = ?
+            AND posted_at >= datetime('now', ?)
+        )
+        SELECT
+          message_id,
+          ambassador_id,
+          ambassador_name,
+          channel_id,
+          content,
+          posted_at
+        FROM ranked_posts
+        WHERE rn <= ?
+        ORDER BY ambassador_name ASC, posted_at DESC
+      `
+      )
+      .all(channelId, `-${days} days`, postsPerAmbassador);
+
+    const detailMap = new Map();
+    for (const row of details) {
+      if (!detailMap.has(row.ambassador_id)) {
+        detailMap.set(row.ambassador_id, []);
+      }
+      detailMap.get(row.ambassador_id).push(row);
+    }
+
+    return ambassadors.map((ambassador) => ({
+      ...ambassador,
+      posts: detailMap.get(ambassador.ambassador_id) || [],
+    }));
+  }
+
   return {
     trackMemberJoin,
     trackMemberLeave,
@@ -412,7 +542,9 @@ function createQueries(db) {
     updateInviteSnapshot,
     upsertAmbassadorInvite,
     getAmbassadorByInviteCode,
+    getAmbassadorById,
     listAmbassadorInvites,
+    trackAmbassadorPost,
     getSummary,
     getMessageVolume,
     getHourlyHeatmap,
@@ -422,6 +554,8 @@ function createQueries(db) {
     getInviteLeaderboard,
     getInviteSnapshotLeaderboard,
     getAmbassadorPerformance,
+    getAmbassadorInvitees,
+    getAmbassadorPostsByChannel,
     getMemberGrowth,
   };
 }

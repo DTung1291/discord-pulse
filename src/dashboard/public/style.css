@@ -91,12 +91,143 @@ body {
   color: var(--muted);
 }
 
+#invite-ranking-list,
+#ambassador-performance-list {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+}
+
 #channel-ranking-list li {
   margin: 8px 0;
 }
 
+#invite-ranking-list li,
+#ambassador-performance-list li {
+  margin: 8px 0;
+}
+
+.ambassador-details {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(23, 35, 61, 0.6);
+  padding: 8px 10px;
+}
+
+.ambassador-details summary {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text);
+}
+
+.invitee-container {
+  margin-top: 10px;
+}
+
+.invitee-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.invitee-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.invitee-controls select,
+.invitee-controls input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(11, 18, 32, 0.7);
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.invitee-controls input::placeholder {
+  color: var(--muted);
+}
+
+.invitee-loading,
+.invitee-empty {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.invitee-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.invitee-list li {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(11, 18, 32, 0.7);
+}
+
+.invitee-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.invitee-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.invitee-meta a {
+  color: #79e7db;
+  text-decoration: none;
+}
+
+.invitee-meta a:hover {
+  text-decoration: underline;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.badge.active {
+  background: rgba(46, 197, 182, 0.2);
+  color: #79e7db;
+}
+
+.badge.ghost {
+  background: rgba(239, 131, 84, 0.2);
+  color: #ffb393;
+}
+
 @media (max-width: 900px) {
   .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .invitee-controls {
     grid-template-columns: 1fr;
   }
 }

@@ -3,6 +3,7 @@ const {
   buildWeeklyReportContent,
   buildGhostMembersContent,
   buildAmbassadorPerformanceContent,
+  buildAmbassadorInviteesContent,
 } = require("../../scheduler/reports");
 
 function isInConfiguredGuild(interaction, guildId) {
@@ -77,6 +78,16 @@ async function onInteractionCreate(interaction, context) {
   if (interaction.commandName === "pulse-ambassadors") {
     const days = interaction.options.getInteger("days") || 7;
     const content = buildAmbassadorPerformanceContent(queries, days, 20);
+    await interaction.reply({ content, ephemeral: true });
+    return;
+  }
+
+  if (interaction.commandName === "pulse-ambassador-users") {
+    const selectedUser = interaction.options.getUser("member");
+    const ambassadorId = selectedUser ? selectedUser.id : interaction.user.id;
+    const days = interaction.options.getInteger("days") || 30;
+    const limit = interaction.options.getInteger("limit") || 20;
+    const content = buildAmbassadorInviteesContent(queries, ambassadorId, days, limit);
     await interaction.reply({ content, ephemeral: true });
   }
 }

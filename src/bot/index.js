@@ -25,6 +25,11 @@ function parseCsvIds(value) {
     .filter(Boolean);
 }
 
+function toPositiveInt(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
 function getAmbassadorMembers(guild, ambassadorRoleIds) {
   const roles = ambassadorRoleIds.length
     ? ambassadorRoleIds
@@ -87,6 +92,29 @@ function getSlashCommands() {
           .setMaxValue(90)
       )
       .toJSON(),
+    new SlashCommandBuilder()
+      .setName("pulse-ambassador-users")
+      .setDescription("Show users invited by an ambassador and their ghost/active status")
+      .addUserOption((option) =>
+        option
+          .setName("member")
+          .setDescription("Ambassador member to inspect (default: you)")
+      )
+      .addIntegerOption((option) =>
+        option
+          .setName("days")
+          .setDescription("Number of days to include (1-90)")
+          .setMinValue(1)
+          .setMaxValue(90)
+      )
+      .addIntegerOption((option) =>
+        option
+          .setName("limit")
+          .setDescription("Maximum users to list (1-30)")
+          .setMinValue(1)
+          .setMaxValue(30)
+      )
+      .toJSON(),
   ];
 }
 
@@ -145,14 +173,11 @@ async function syncGuildMembers(guild, queries) {
     const snapshot = [];
 
     for (const member of members.values()) {
-      if (member.user.bot) {
-        continue;
-      }
-
       snapshot.push({
         userId: member.id,
         username: member.user.tag,
         joinedAt: member.joinedAt ? member.joinedAt.toISOString() : new Date().toISOString(),
+        isBot: member.user.bot,
       });
     }
 
@@ -218,6 +243,77 @@ async function provisionAmbassadorInvites(guild, queries, ambassadorRoleIds, inv
   }
 }
 
+async function backfillAmbassadorPosts(guild, queries, channelId, maxMessages) {
+  if (!channelId || maxMessages <= 0) {
+    return;
+  }
+
+  try {
+    const channel = await guild.channels.fetch(channelId).catch(() => null);
+    if (!channel || !channel.isTextBased()) {
+      console.warn("Ambassador post backfill skipped: channel not found or not text-based.");
+      return;
+    }
+
+    const ambassadorRows = queries.listAmbassadorInvites();
+    const ambassadorById = new Map(ambassadorRows.map((row) => [row.ambassador_id, row.ambassador_name]));
+    if (!ambassadorById.size) {
+      console.warn("Ambassador post backfill skipped: no ambassador mapping found.");
+      return;
+    }
+
+    let scanned = 0;
+    let saved = 0;
+    let before;
+
+    while (scanned < maxMessages) {
+      const batchLimit = Math.min(100, maxMessages - scanned);
+      const batch = await channel.messages.fetch({
+        limit: batchLimit,
+        ...(before ? { before } : {}),
+      });
+
+      if (!batch.size) {
+        break;
+      }
+
+      for (const message of batch.values()) {
+        scanned += 1;
+
+        if (message.author.bot) {
+          continue;
+        }
+
+        const ambassadorName = ambassadorById.get(message.author.id);
+        if (!ambassadorName) {
+          continue;
+        }
+
+        queries.trackAmbassadorPost({
+          messageId: message.id,
+          ambassadorId: message.author.id,
+          ambassadorName,
+          channelId: message.channel.id,
+          content: message.content || "",
+          postedAt: message.createdAt.toISOString(),
+        });
+        saved += 1;
+      }
+
+      before = batch.last().id;
+      if (batch.size < batchLimit) {
+        break;
+      }
+    }
+
+    console.log(
+      `Ambassador post backfill done for channel ${channelId}: scanned ${scanned}, stored ${saved}`
+    );
+  } catch (error) {
+    console.warn("Ambassador post backfill failed:", error.message);
+  }
+}
+
 async function startBot(options = {}) {
   const token = options.token || process.env.DISCORD_TOKEN;
   const guildId = options.guildId || process.env.GUILD_ID;
@@ -246,10 +342,12 @@ async function startBot(options = {}) {
     guildId,
     invitesCache,
     adminRoleIds: parseCsvIds(process.env.ADMIN_ROLE_IDS),
+    ambassadorPostChannelId: process.env.AMBASSADOR_POST_CHANNEL_ID || "1518242290982719698",
   };
 
   const ambassadorRoleIds = parseCsvIds(process.env.AMBASSADOR_ROLE_IDS);
   const ambassadorInviteChannelId = process.env.AMBASSADOR_INVITE_CHANNEL_ID;
+  const ambassadorPostBackfillLimit = toPositiveInt(process.env.AMBASSADOR_POST_BACKFILL_LIMIT, 2000);
 
   client.once("clientReady", async () => {
     console.log(`Bot logged in as ${client.user.tag}`);
@@ -266,6 +364,12 @@ async function startBot(options = {}) {
         queries,
         ambassadorRoleIds,
         ambassadorInviteChannelId
+      );
+      await backfillAmbassadorPosts(
+        guild,
+        queries,
+        context.ambassadorPostChannelId,
+        ambassadorPostBackfillLimit
       );
     }
 
