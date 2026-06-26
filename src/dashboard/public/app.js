@@ -200,7 +200,7 @@ function buildAmbassadorCompareRows(rows, ambassadorPostsMap = new Map()) {
     };
   });
 
-  return normalized.sort((a, b) => b.joins - a.joins).slice(0, 10);
+  return normalized.sort((a, b) => b.joins - a.joins);
 }
 
 function renderAmbassadorCompareChart(rows, ambassadorPostsMap = new Map()) {
@@ -396,6 +396,11 @@ function renderAmbassadorPerformance(rows, ambassadorPostsMap = new Map(), ambas
     return;
   }
 
+  const countLabel = document.getElementById("ambassador-count-label");
+  if (countLabel) {
+    countLabel.textContent = `Showing ${rows.length} ambassadors`;
+  }
+
   list.innerHTML = rows
     .map((row) => {
       const name = escapeHtml(row.ambassador_name || `User ${row.ambassador_id}`);
@@ -453,14 +458,32 @@ function renderAmbassadorPerformance(rows, ambassadorPostsMap = new Map(), ambas
           `
         : '<div class="invitee-empty">No posts in tracked channel.</div>';
 
-      const summaryBreakdown = `current ${currentCount} | regular ${regularCount} | left ${leftCount}`;
+      const summaryMetrics = `
+        <div class="ambassador-summary-metrics">
+          <span class="metric-chip joins">joins: ${row.invited_count}</span>
+          <span class="metric-chip posts">posts: ${postCount}</span>
+          <span class="metric-chip current">current: ${currentCount}</span>
+          <span class="metric-chip regular">regular: ${regularCount}</span>
+          <span class="metric-chip left">left: ${leftCount}</span>
+          <span class="metric-chip">fake: ${fakeCount}</span>
+          <span class="metric-chip">bonus: ${bonusCount}</span>
+          ${
+            unattributedCount > 0
+              ? `<span class="metric-chip unattributed">unattributed: ${unattributedCount}</span>`
+              : ""
+          }
+        </div>
+      `;
 
       return `
         <li class="ambassador-item">
           <details class="ambassador-details" data-ambassador-id="${ambassadorId}">
             <summary>
-              <span>${name} (${ambassadorId})<br /><small>${summaryBreakdown}</small></span>
-              <strong>${row.invited_count} joins | ${postCount} posts</strong>
+              <span>
+                ${name} (${ambassadorId})
+                ${summaryMetrics}
+              </span>
+              <strong>View details</strong>
             </summary>
             ${inviteHtml}
             ${breakdownHtml}
@@ -507,9 +530,9 @@ async function loadDashboard() {
         getJson("/api/member-growth?days=30"),
         getJson("/api/channel-rankings?days=7&limit=10"),
         getJson("/api/invite-leaderboard?limit=10"),
-        getJson("/api/ambassador-performance?days=7&limit=100"),
+        getJson("/api/ambassador-performance?days=7&limit=1000"),
         getJson(
-          "/api/ambassador-posts?channelId=1518242290982719698&days=30&ambassadorLimit=100&postsPerAmbassador=5"
+          "/api/ambassador-posts?channelId=1518242290982719698&days=30&ambassadorLimit=1000&postsPerAmbassador=5"
         ),
         getJson("/api/ambassador-invites"),
       ]);

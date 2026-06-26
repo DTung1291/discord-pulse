@@ -41,44 +41,46 @@ async function onInteractionCreate(interaction, context) {
     return;
   }
 
+  // Acknowledge quickly to avoid Discord's 3-second timeout for slower commands.
+  await interaction.deferReply({ ephemeral: true });
+
   if (interaction.commandName === "pulse-summary") {
     const days = interaction.options.getInteger("days") || 7;
     const content = buildDailyReportContent(queries, days);
-    await interaction.reply({ content, ephemeral: true });
+    await interaction.editReply({ content });
     return;
   }
 
   if (interaction.commandName === "pulse-daily") {
     const content = buildDailyReportContent(queries, 1);
-    await interaction.reply({ content, ephemeral: true });
+    await interaction.editReply({ content });
     return;
   }
 
   if (interaction.commandName === "pulse-weekly") {
     if (!hasAnyAdminRole(interaction, adminRoleIds)) {
-      await interaction.reply({
+      await interaction.editReply({
         content: "You do not have permission to run this command.",
-        ephemeral: true,
       });
       return;
     }
 
     const content = buildWeeklyReportContent(queries);
-    await interaction.reply({ content, ephemeral: true });
+    await interaction.editReply({ content });
     return;
   }
 
   if (interaction.commandName === "pulse-ghosts") {
     const days = interaction.options.getInteger("days") || 30;
     const content = buildGhostMembersContent(queries, days, 20);
-    await interaction.reply({ content, ephemeral: true });
+    await interaction.editReply({ content });
     return;
   }
 
   if (interaction.commandName === "pulse-ambassadors") {
     const days = interaction.options.getInteger("days") || 7;
     const content = buildAmbassadorPerformanceContent(queries, days, 20);
-    await interaction.reply({ content, ephemeral: true });
+    await interaction.editReply({ content });
     return;
   }
 
@@ -88,8 +90,13 @@ async function onInteractionCreate(interaction, context) {
     const days = interaction.options.getInteger("days") || 30;
     const limit = interaction.options.getInteger("limit") || 20;
     const content = buildAmbassadorInviteesContent(queries, ambassadorId, days, limit);
-    await interaction.reply({ content, ephemeral: true });
+    await interaction.editReply({ content });
+    return;
   }
+
+  await interaction.editReply({
+    content: "This command is not supported by the current bot version yet.",
+  });
 }
 
 module.exports = {
