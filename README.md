@@ -9,7 +9,8 @@ A self-hosted Discord server analytics bot with a realtime dashboard and schedul
 - **Channel Popularity** — rank channels by activity, voice channel time tracking
 - **User Engagement** — identify active members vs ghosts, per-user stats over 7/30 days
 - **Discord Reports** — automated embed reports posted to a designated channel via cron
-- **Slash Commands** — on-demand reports via `/pulse-summary`, `/pulse-daily`, `/pulse-weekly`, `/pulse-ghosts`
+- **Ambassador Invite Tracking** — auto-provision unique ambassador invites and track weekly ambassador performance
+- **Slash Commands** — on-demand reports via `/pulse-summary`, `/pulse-daily`, `/pulse-weekly`, `/pulse-ghosts`, `/pulse-ambassadors`
 - **Web Dashboard** — realtime charts and filters via a local web UI
 
 ## Tech Stack
@@ -79,11 +80,15 @@ DASHBOARD_PORT=3000
 DB_PATH=./data/discord-pulse.db
 TIMEZONE=UTC
 ADMIN_ROLE_IDS=comma_separated_role_ids_for_weekly_command
+AMBASSADOR_ROLE_IDS=comma_separated_role_ids_for_ambassador_group
+AMBASSADOR_INVITE_CHANNEL_ID=channel_id_to_create_ambassador_invites
 ```
 
 Notes:
 - `ADMIN_ROLE_IDS` is optional. If set, only members with one of these role IDs can run `/pulse-weekly`.
 - Leave `ADMIN_ROLE_IDS` empty to allow all members to run slash reports.
+- `AMBASSADOR_ROLE_IDS` is optional. If empty, roles containing `ambassador` in name are auto-detected.
+- `AMBASSADOR_INVITE_CHANNEL_ID` should be a text channel where the bot can create invites.
 
 ### Run
 
@@ -100,12 +105,20 @@ npm run dashboard
 
 Open `http://localhost:3000` in your browser after starting the app.
 
+Dashboard includes:
+
+- Summary cards (messages, joins, leaves, active members)
+- Message volume and member growth charts
+- Channel rankings
+- Invite leaderboard (current snapshot)
+- Ambassador performance (7-day leaderboard)
+
 ## Scheduled Reports
 
 Reports are posted automatically to `REPORT_CHANNEL_ID`:
 
 - **Daily** — message activity summary, new members
-- **Weekly** — invite leaderboard, channel rankings, ghost member list
+- **Weekly** — invite leaderboard, channel rankings, ambassador performance, ghost member list
 
 ## Slash Commands
 
@@ -115,6 +128,11 @@ The bot registers guild slash commands automatically on startup:
 - `/pulse-daily` — quick daily summary
 - `/pulse-weekly` — weekly report with invite/channel/ghost stats
 - `/pulse-ghosts [days]` — inactive members list
+- `/pulse-ambassadors [days]` — ambassador invite performance leaderboard
+
+## Security Note
+
+- Exported CSV files under `exports/` are ignored by git (sensitive operational data should not be committed).
 
 ## License
 
