@@ -68,6 +68,17 @@ function initDatabase(dbPath) {
       posted_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS invite_tracker_sync (
+      ambassador_id TEXT PRIMARY KEY,
+      current_count INTEGER NOT NULL DEFAULT 0,
+      regular_count INTEGER NOT NULL DEFAULT 0,
+      left_count INTEGER NOT NULL DEFAULT 0,
+      fake_count INTEGER NOT NULL DEFAULT 0,
+      bonus_count INTEGER NOT NULL DEFAULT 0,
+      synced_at TEXT NOT NULL,
+      source_text TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_message_events_created_at ON message_events(created_at);
     CREATE INDEX IF NOT EXISTS idx_message_events_channel_id ON message_events(channel_id);
     CREATE INDEX IF NOT EXISTS idx_join_events_joined_at ON join_events(joined_at);
@@ -76,6 +87,7 @@ function initDatabase(dbPath) {
     CREATE INDEX IF NOT EXISTS idx_ambassador_invites_active ON ambassador_invites(active);
     CREATE INDEX IF NOT EXISTS idx_ambassador_posts_channel_posted_at ON ambassador_posts(channel_id, posted_at);
     CREATE INDEX IF NOT EXISTS idx_ambassador_posts_ambassador_id ON ambassador_posts(ambassador_id);
+    CREATE INDEX IF NOT EXISTS idx_invite_tracker_sync_synced_at ON invite_tracker_sync(synced_at);
   `);
 
   const memberColumns = db.prepare("PRAGMA table_info(members)").all();

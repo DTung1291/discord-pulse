@@ -1,6 +1,6 @@
 # discord-pulse 📊
 
-A self-hosted Discord server analytics bot with a realtime dashboard and scheduled reports.
+A self-hosted Discord server analytics bot with a real-time dashboard and scheduled reports.
 
 ## Features
 

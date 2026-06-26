@@ -111,6 +111,52 @@ function createQueries(db) {
       posted_at = excluded.posted_at
   `);
 
+  const upsertInviteTrackerSyncStmt = db.prepare(`
+    INSERT INTO invite_tracker_sync (
+      ambassador_id,
+      current_count,
+      regular_count,
+      left_count,
+      fake_count,
+      bonus_count,
+      synced_at,
+      source_text
+    )
+    VALUES (
+      @ambassador_id,
+      @current_count,
+      @regular_count,
+      @left_count,
+      @fake_count,
+      @bonus_count,
+      @synced_at,
+      @source_text
+    )
+    ON CONFLICT(ambassador_id) DO UPDATE SET
+      current_count = excluded.current_count,
+      regular_count = excluded.regular_count,
+      left_count = excluded.left_count,
+      fake_count = excluded.fake_count,
+      bonus_count = excluded.bonus_count,
+      synced_at = excluded.synced_at,
+      source_text = excluded.source_text
+  `);
+
+  const getInviteTrackerSyncStmt = db.prepare(`
+    SELECT
+      ambassador_id,
+      current_count,
+      regular_count,
+      left_count,
+      fake_count,
+      bonus_count,
+      synced_at,
+      source_text
+    FROM invite_tracker_sync
+    WHERE ambassador_id = ?
+    LIMIT 1
+  `);
+
   function trackMemberJoin({ userId, username, inviterId, joinedAt, isBot }) {
     const payload = {
       user_id: userId,
@@ -263,6 +309,32 @@ function createQueries(db) {
     });
   }
 
+  function upsertInviteTrackerSync({
+    ambassadorId,
+    currentCount,
+    regularCount,
+    leftCount,
+    fakeCount,
+    bonusCount,
+    sourceText,
+    syncedAt,
+  }) {
+    upsertInviteTrackerSyncStmt.run({
+      ambassador_id: ambassadorId,
+      current_count: Number(currentCount || 0),
+      regular_count: Number(regularCount || 0),
+      left_count: Number(leftCount || 0),
+      fake_count: Number(fakeCount || 0),
+      bonus_count: Number(bonusCount || 0),
+      synced_at: syncedAt || new Date().toISOString(),
+      source_text: sourceText || null,
+    });
+  }
+
+  function getInviteTrackerSync(ambassadorId) {
+    return getInviteTrackerSyncStmt.get(ambassadorId) || null;
+  }
+
   function getSummary(days = 7) {
     const rows = db
       .prepare(
@@ -400,21 +472,142 @@ function createQueries(db) {
     return db
       .prepare(
         `
+        WITH perf AS (
+          SELECT
+            ai.ambassador_id,
+            MAX(ai.ambassador_name) AS ambassador_name,
+            COUNT(je.id) AS invited_count
+          FROM ambassador_invites ai
+          LEFT JOIN join_events je
+            ON je.inviter_id = ai.ambassador_id
+           AND je.joined_at >= datetime('now', ?)
+          WHERE ai.active = 1
+          GROUP BY ai.ambassador_id
+        ),
+        snapshot AS (
+          SELECT
+            inviter_id AS ambassador_id,
+            COALESCE(SUM(uses), 0) AS regular_count
+          FROM invite_snapshots
+          WHERE inviter_id IS NOT NULL
+          GROUP BY inviter_id
+        ),
+        member_map AS (
+          SELECT
+            inviter_id AS ambassador_id,
+            SUM(CASE WHEN left_at IS NULL THEN 1 ELSE 0 END) AS current_count,
+            SUM(CASE WHEN left_at IS NOT NULL THEN 1 ELSE 0 END) AS left_count
+          FROM members
+          WHERE inviter_id IS NOT NULL
+            AND COALESCE(is_bot, 0) = 0
+          GROUP BY inviter_id
+        ),
+        tracker_sync AS (
+          SELECT
+            ambassador_id,
+            current_count,
+            regular_count,
+            left_count,
+            fake_count,
+            bonus_count
+          FROM invite_tracker_sync
+        )
         SELECT
-          ai.ambassador_id,
-          MAX(ai.ambassador_name) AS ambassador_name,
-          COUNT(je.id) AS invited_count
-        FROM ambassador_invites ai
-        LEFT JOIN join_events je
-          ON je.inviter_id = ai.ambassador_id
-         AND je.joined_at >= datetime('now', ?)
-        WHERE ai.active = 1
-        GROUP BY ai.ambassador_id
+          p.ambassador_id,
+          p.ambassador_name,
+          p.invited_count,
+          COALESCE(ts.regular_count, s.regular_count, 0) AS regular_count,
+          COALESCE(ts.current_count, m.current_count, 0) AS current_count,
+          COALESCE(ts.left_count, m.left_count, 0) AS left_count,
+          COALESCE(ts.fake_count, 0) AS fake_count,
+          COALESCE(ts.bonus_count, 0) AS bonus_count,
+          MAX(
+            COALESCE(ts.regular_count, s.regular_count, 0) -
+              (
+                COALESCE(ts.current_count, m.current_count, 0) +
+                COALESCE(ts.left_count, m.left_count, 0) +
+                COALESCE(ts.fake_count, 0) +
+                COALESCE(ts.bonus_count, 0)
+              ),
+            0
+          ) AS unattributed_count
+        FROM perf p
+        LEFT JOIN snapshot s ON s.ambassador_id = p.ambassador_id
+        LEFT JOIN member_map m ON m.ambassador_id = p.ambassador_id
+        LEFT JOIN tracker_sync ts ON ts.ambassador_id = p.ambassador_id
         ORDER BY invited_count DESC, ambassador_name ASC
         LIMIT ?
       `
       )
       .all(`-${days} days`, limit);
+  }
+
+  function getAmbassadorInviteBreakdown(ambassadorId, days = 0) {
+    const tracker = getInviteTrackerSync(ambassadorId);
+    if (tracker) {
+      const regular = Number(tracker.regular_count || 0);
+      const current = Number(tracker.current_count || 0);
+      const left = Number(tracker.left_count || 0);
+      const fake = Number(tracker.fake_count || 0);
+      const bonus = Number(tracker.bonus_count || 0);
+
+      return {
+        regular_count: regular,
+        current_count: current,
+        left_count: left,
+        fake_count: fake,
+        bonus_count: bonus,
+        member_regular_count: current + left,
+        unattributed_count: Math.max(regular - (current + left + fake + bonus), 0),
+      };
+    }
+
+    const hasDaysFilter = Number(days) > 0;
+
+    const snapshotRegular = db
+      .prepare(
+        `
+        SELECT COALESCE(SUM(s.uses), 0) AS regular_count
+        FROM invite_snapshots s
+        WHERE s.inviter_id = ?
+      `
+      )
+      .get(ambassadorId);
+
+    const memberBased = db
+      .prepare(
+        `
+        WITH invited_users AS (
+          SELECT DISTINCT je.user_id
+          FROM join_events je
+          WHERE je.inviter_id = ?
+            AND (? = 0 OR je.joined_at >= datetime('now', ?))
+        )
+        SELECT
+          COUNT(*) AS member_regular_count,
+          SUM(CASE WHEN m.left_at IS NULL THEN 1 ELSE 0 END) AS current_count,
+          SUM(CASE WHEN m.left_at IS NOT NULL THEN 1 ELSE 0 END) AS left_count
+        FROM invited_users iu
+        LEFT JOIN members m ON m.user_id = iu.user_id
+        WHERE COALESCE(m.is_bot, 0) = 0
+      `
+      )
+      .get(ambassadorId, hasDaysFilter ? 1 : 0, `-${days} days`);
+
+    const regular = Number(snapshotRegular?.regular_count || 0);
+    const current = Number(memberBased?.current_count || 0);
+    const left = Number(memberBased?.left_count || 0);
+    const mapped = current + left;
+
+    return {
+      regular_count: regular,
+      current_count: current,
+      left_count: left,
+      fake_count: 0,
+      bonus_count: 0,
+      member_regular_count: Number(memberBased?.member_regular_count || 0),
+      unattributed_count: Math.max(regular - mapped, 0),
+    };
   }
 
   function getAmbassadorInvitees(ambassadorId, days = 30, limit = 20) {
@@ -545,6 +738,8 @@ function createQueries(db) {
     getAmbassadorById,
     listAmbassadorInvites,
     trackAmbassadorPost,
+    upsertInviteTrackerSync,
+    getInviteTrackerSync,
     getSummary,
     getMessageVolume,
     getHourlyHeatmap,
@@ -554,6 +749,7 @@ function createQueries(db) {
     getInviteLeaderboard,
     getInviteSnapshotLeaderboard,
     getAmbassadorPerformance,
+    getAmbassadorInviteBreakdown,
     getAmbassadorInvitees,
     getAmbassadorPostsByChannel,
     getMemberGrowth,

@@ -40,9 +40,44 @@
 
         <article class="panel full">
           <h2>Ambassador Performance (7 days)</h2>
+          <details class="sync-box">
+            <summary>Sync from Invite Tracker (/invites)</summary>
+            <form id="invite-tracker-sync-form" class="sync-form">
+              <label>
+                Ambassador ID
+                <input
+                  id="sync-ambassador-id"
+                  type="text"
+                  placeholder="e.g. 1408899431708889280"
+                  required
+                />
+              </label>
+              <label>
+                Invite Tracker text
+                <textarea
+                  id="sync-invite-text"
+                  rows="4"
+                  placeholder="You currently have **15** invites. (**18** regular, **3** left, **0** fake, **0** bonus)"
+                  required
+                ></textarea>
+              </label>
+              <button id="sync-submit" type="submit">Sync now</button>
+              <p id="sync-status" class="sync-status">Paste /invites text rồi bấm Sync now.</p>
+            </form>
+          </details>
+          <div class="chart-wrap">
+            <canvas id="ambassadorCompareChart"></canvas>
+          </div>
+          <p id="ambassador-chart-empty" class="chart-empty" hidden>
+            No ambassador data yet.
+          </p>
           <ol id="ambassador-performance-list"></ol>
         </article>
       </section>
+
+      <footer class="site-footer">
+        <p>© DTung1291. All rights reserved.</p>
+      </footer>
     </main>
 
     <script src="/app.js"></script>
