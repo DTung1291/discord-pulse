@@ -21,3 +21,7 @@ pnpm-debug.log*
 
 # macOS
 .DS_Store
+
+# Exported reports/data
+exports/*.csv
+!exports/.gitkeep
