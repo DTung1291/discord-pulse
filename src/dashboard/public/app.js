@@ -6,6 +6,22 @@ async function getJson(url) {
   return res.json();
 }
 
+async function postJson(url, payload) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = data && data.error ? data.error : `Request failed: ${res.status}`;
+    throw new Error(message);
+  }
+
+  return data;
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -17,6 +33,7 @@ function escapeHtml(value) {
 
 let messageVolumeChart;
 let memberGrowthChart;
+let ambassadorCompareChart;
 const FULL_REFRESH_MS = 30000;
 const CHANNEL_RANKING_REFRESH_MS = 5000;
 
@@ -168,6 +185,102 @@ function mapAmbassadorInviteById(invites) {
   return map;
 }
 
+function buildAmbassadorCompareRows(rows, ambassadorPostsMap = new Map()) {
+  const normalized = (rows || []).map((row) => {
+    const postGroup = ambassadorPostsMap.get(row.ambassador_id) || null;
+    const posts = Number(postGroup ? postGroup.post_count : 0);
+    const joins = Number(row.invited_count || 0);
+    const joinsPerPost = posts > 0 ? Number((joins / posts).toFixed(2)) : 0;
+    return {
+      id: row.ambassador_id,
+      name: row.ambassador_name || `User ${row.ambassador_id}`,
+      joins,
+      posts,
+      joinsPerPost,
+    };
+  });
+
+  return normalized.sort((a, b) => b.joins - a.joins).slice(0, 10);
+}
+
+function renderAmbassadorCompareChart(rows, ambassadorPostsMap = new Map()) {
+  const ctx = document.getElementById("ambassadorCompareChart");
+  const emptyEl = document.getElementById("ambassador-chart-empty");
+  const dataRows = buildAmbassadorCompareRows(rows, ambassadorPostsMap);
+
+  if (ambassadorCompareChart) {
+    ambassadorCompareChart.destroy();
+  }
+
+  if (!ctx || !dataRows.length) {
+    if (emptyEl) {
+      emptyEl.hidden = false;
+    }
+    return;
+  }
+
+  if (emptyEl) {
+    emptyEl.hidden = true;
+  }
+
+  ambassadorCompareChart = new Chart(ctx, {
+    data: {
+      labels: dataRows.map((row) => row.name),
+      datasets: [
+        {
+          type: "bar",
+          label: "Joins (7d)",
+          data: dataRows.map((row) => row.joins),
+          backgroundColor: "rgba(46, 197, 182, 0.75)",
+          borderRadius: 6,
+          yAxisID: "y",
+        },
+        {
+          type: "bar",
+          label: "Posts (30d channel)",
+          data: dataRows.map((row) => row.posts),
+          backgroundColor: "rgba(239, 131, 84, 0.75)",
+          borderRadius: 6,
+          yAxisID: "y",
+        },
+        {
+          type: "line",
+          label: "Joins/Post",
+          data: dataRows.map((row) => row.joinsPerPost),
+          borderColor: "#79b8ff",
+          backgroundColor: "rgba(121, 184, 255, 0.2)",
+          tension: 0.2,
+          fill: false,
+          yAxisID: "y1",
+        },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: "#e7ecf8" } },
+        tooltip: { mode: "index", intersect: false },
+      },
+      scales: {
+        x: { ticks: { color: "#a5b1ca" }, grid: { color: "#223052" } },
+        y: {
+          title: { display: true, text: "Count", color: "#a5b1ca" },
+          ticks: { color: "#a5b1ca" },
+          grid: { color: "#223052" },
+          beginAtZero: true,
+        },
+        y1: {
+          position: "right",
+          title: { display: true, text: "Joins/Post", color: "#a5b1ca" },
+          ticks: { color: "#a5b1ca" },
+          grid: { drawOnChartArea: false },
+          beginAtZero: true,
+        },
+      },
+    },
+  });
+}
+
 function renderInviteeList(listWrap, rows, statusFilter = "all", query = "") {
   const normalizedQuery = (query || "").trim().toLowerCase();
 
@@ -292,9 +405,29 @@ function renderAmbassadorPerformance(rows, ambassadorPostsMap = new Map(), ambas
       const inviteLink = inviteCode ? `https://discord.gg/${encodeURIComponent(inviteCode)}` : null;
       const postCount = Number(postGroup ? postGroup.post_count : 0);
       const postRows = Array.isArray(postGroup?.posts) ? postGroup.posts : [];
+      const regularCount = Number(row.regular_count || 0);
+      const currentCount = Number(row.current_count || 0);
+      const leftCount = Number(row.left_count || 0);
+      const fakeCount = Number(row.fake_count || 0);
+      const bonusCount = Number(row.bonus_count || 0);
+      const unattributedCount = Number(row.unattributed_count || 0);
       const inviteHtml = inviteLink
         ? `<div class="invitee-meta"><span>invite: <a href="${inviteLink}" target="_blank" rel="noreferrer noopener">${escapeHtml(inviteCode)}</a></span></div>`
         : '<div class="invitee-meta"><span>invite: none</span></div>';
+      const breakdownHtml = `
+        <div class="invitee-meta">
+          <span>current: <strong>${currentCount}</strong></span>
+          <span>regular: <strong>${regularCount}</strong></span>
+          <span>left: <strong>${leftCount}</strong></span>
+          <span>fake: <strong>${fakeCount}</strong></span>
+          <span>bonus: <strong>${bonusCount}</strong></span>
+          ${
+            unattributedCount > 0
+              ? `<span class="breakdown-note">unattributed: ${unattributedCount}</span>`
+              : ""
+          }
+        </div>
+      `;
       const postHtml = postRows.length
         ? `
             <ul class="invitee-list">
@@ -320,14 +453,17 @@ function renderAmbassadorPerformance(rows, ambassadorPostsMap = new Map(), ambas
           `
         : '<div class="invitee-empty">No posts in tracked channel.</div>';
 
+      const summaryBreakdown = `current ${currentCount} | regular ${regularCount} | left ${leftCount}`;
+
       return `
         <li class="ambassador-item">
           <details class="ambassador-details" data-ambassador-id="${ambassadorId}">
             <summary>
-              <span>${name} (${ambassadorId})</span>
+              <span>${name} (${ambassadorId})<br /><small>${summaryBreakdown}</small></span>
               <strong>${row.invited_count} joins | ${postCount} posts</strong>
             </summary>
             ${inviteHtml}
+            ${breakdownHtml}
             <div class="invitee-container">
               <div class="invitee-loading">Loading invitees...</div>
             </div>
@@ -371,9 +507,9 @@ async function loadDashboard() {
         getJson("/api/member-growth?days=30"),
         getJson("/api/channel-rankings?days=7&limit=10"),
         getJson("/api/invite-leaderboard?limit=10"),
-        getJson("/api/ambassador-performance?days=7&limit=20"),
+        getJson("/api/ambassador-performance?days=7&limit=100"),
         getJson(
-          "/api/ambassador-posts?channelId=1518242290982719698&days=30&ambassadorLimit=20&postsPerAmbassador=5"
+          "/api/ambassador-posts?channelId=1518242290982719698&days=30&ambassadorLimit=100&postsPerAmbassador=5"
         ),
         getJson("/api/ambassador-invites"),
       ]);
@@ -385,6 +521,7 @@ async function loadDashboard() {
     renderInviteRanking(inviteRankings);
     const ambassadorPostsMap = mapAmbassadorPostsById(ambassadorPosts);
     const ambassadorInviteMap = mapAmbassadorInviteById(ambassadorInvites);
+    renderAmbassadorCompareChart(ambassadorPerformance, ambassadorPostsMap);
     renderAmbassadorPerformance(ambassadorPerformance, ambassadorPostsMap, ambassadorInviteMap);
     updateLastUpdated();
   } catch (error) {
@@ -401,7 +538,52 @@ async function refreshChannelRankingLive() {
   }
 }
 
+function setupInviteTrackerSyncForm() {
+  const form = document.getElementById("invite-tracker-sync-form");
+  const ambassadorIdInput = document.getElementById("sync-ambassador-id");
+  const inviteTextInput = document.getElementById("sync-invite-text");
+  const submitBtn = document.getElementById("sync-submit");
+  const statusEl = document.getElementById("sync-status");
+
+  if (!form || !ambassadorIdInput || !inviteTextInput || !submitBtn || !statusEl) {
+    return;
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const ambassadorId = ambassadorIdInput.value.trim();
+    const text = inviteTextInput.value.trim();
+
+    if (!ambassadorId || !text) {
+      statusEl.textContent = "Ambassador ID và Invite Tracker text là bắt buộc.";
+      statusEl.classList.remove("ok");
+      statusEl.classList.add("error");
+      return;
+    }
+
+    submitBtn.disabled = true;
+    statusEl.textContent = "Syncing...";
+    statusEl.classList.remove("ok", "error");
+
+    try {
+      const result = await postJson("/api/invite-tracker-sync", { ambassadorId, text });
+      statusEl.textContent = `Synced ${result.ambassador_id}: current ${result.current_count}, regular ${result.regular_count}, left ${result.left_count}, fake ${result.fake_count}, bonus ${result.bonus_count}.`;
+      statusEl.classList.remove("error");
+      statusEl.classList.add("ok");
+      await loadDashboard();
+    } catch (error) {
+      statusEl.textContent = `Sync failed: ${error.message}`;
+      statusEl.classList.remove("ok");
+      statusEl.classList.add("error");
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+}
+
 async function init() {
+  setupInviteTrackerSyncForm();
   await loadDashboard();
   setInterval(loadDashboard, FULL_REFRESH_MS);
   setInterval(refreshChannelRankingLive, CHANNEL_RANKING_REFRESH_MS);

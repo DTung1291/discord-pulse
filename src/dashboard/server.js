@@ -10,6 +10,44 @@ function toInt(value, fallback) {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
+function extractInt(text, pattern) {
+  const m = text.match(pattern);
+  if (!m) {
+    return null;
+  }
+
+  const parsed = Number(m[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseInviteTrackerText(rawText) {
+  const text = String(rawText || "").replace(/\*\*/g, " ");
+
+  const current = extractInt(text, /(?:have|has)\s+(\d+)\s+invites?\.?/i);
+  const regular = extractInt(text, /(\d+)\s+regular/i);
+  const left = extractInt(text, /(\d+)\s+left/i);
+  const fake = extractInt(text, /(\d+)\s+fake/i);
+  const bonus = extractInt(text, /(\d+)\s+bonus/i);
+
+  if (
+    current === null ||
+    regular === null ||
+    left === null ||
+    fake === null ||
+    bonus === null
+  ) {
+    return null;
+  }
+
+  return {
+    current,
+    regular,
+    left,
+    fake,
+    bonus,
+  };
+}
+
 function startDashboard(options = {}) {
   const app = express();
 
@@ -83,6 +121,95 @@ function startDashboard(options = {}) {
     const days = toInt(req.query.days, 30);
     const limit = toInt(req.query.limit, 20);
     res.json(queries.getAmbassadorInvitees(ambassadorId, days, limit));
+  });
+
+  app.get("/api/ambassador-invite-breakdown", (req, res) => {
+    const ambassadorId = (req.query.ambassadorId || "").toString().trim();
+    if (!ambassadorId) {
+      res.status(400).json({ error: "ambassadorId is required" });
+      return;
+    }
+
+    const days = toInt(req.query.days, 0);
+    const breakdown = queries.getAmbassadorInviteBreakdown(ambassadorId, days) || {};
+
+    const regular = Number(breakdown.regular_count || 0);
+    const left = Number(breakdown.left_count || 0);
+    const current = Number(breakdown.current_count || 0);
+    const unattributed = Number(breakdown.unattributed_count || 0);
+
+    res.json({
+      ambassador_id: ambassadorId,
+      days,
+      current_invites: current,
+      regular_count: regular,
+      left_count: left,
+      fake_count: Number(breakdown.fake_count || 0),
+      bonus_count: Number(breakdown.bonus_count || 0),
+      unattributed_count: unattributed,
+    });
+  });
+
+  app.get("/api/invite-tracker-sync", (req, res) => {
+    const ambassadorId = (req.query.ambassadorId || "").toString().trim();
+    if (!ambassadorId) {
+      res.status(400).json({ error: "ambassadorId is required" });
+      return;
+    }
+
+    const row = queries.getInviteTrackerSync(ambassadorId);
+    res.json(row || null);
+  });
+
+  app.post("/api/invite-tracker-sync", (req, res) => {
+    const ambassadorId = (req.body?.ambassadorId || "").toString().trim();
+    if (!ambassadorId) {
+      res.status(400).json({ error: "ambassadorId is required" });
+      return;
+    }
+
+    let payload = null;
+    const text = (req.body?.text || "").toString().trim();
+
+    if (text) {
+      payload = parseInviteTrackerText(text);
+      if (!payload) {
+        res.status(400).json({
+          error:
+            "Unable to parse text. Expected format like: You currently have 15 invites. (18 regular, 3 left, 0 fake, 0 bonus)",
+        });
+        return;
+      }
+    } else {
+      payload = {
+        current: toInt(req.body?.current, 0),
+        regular: toInt(req.body?.regular, 0),
+        left: toInt(req.body?.left, 0),
+        fake: toInt(req.body?.fake, 0),
+        bonus: toInt(req.body?.bonus, 0),
+      };
+    }
+
+    queries.upsertInviteTrackerSync({
+      ambassadorId,
+      currentCount: payload.current,
+      regularCount: payload.regular,
+      leftCount: payload.left,
+      fakeCount: payload.fake,
+      bonusCount: payload.bonus,
+      sourceText: text || null,
+      syncedAt: new Date().toISOString(),
+    });
+
+    res.json({
+      ok: true,
+      ambassador_id: ambassadorId,
+      current_count: payload.current,
+      regular_count: payload.regular,
+      left_count: payload.left,
+      fake_count: payload.fake,
+      bonus_count: payload.bonus,
+    });
   });
 
   app.get("/api/ambassador-posts", (req, res) => {

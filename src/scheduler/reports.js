@@ -28,7 +28,12 @@ function formatAmbassadorPerformance(rows) {
   return rows
     .map((row, idx) => {
       const name = row.ambassador_name || row.ambassador_id;
-      return `${idx + 1}. ${name} (<@${row.ambassador_id}>) - ${row.invited_count} joins`;
+      const regular = Number(row.regular_count || 0);
+      const left = Number(row.left_count || 0);
+      const current = Number(row.current_count || 0);
+      const fake = Number(row.fake_count || 0);
+      const bonus = Number(row.bonus_count || 0);
+      return `${idx + 1}. ${name} (<@${row.ambassador_id}>) - ${row.invited_count} joins (current ${current} | regular ${regular} | left ${left} | fake ${fake} | bonus ${bonus})`;
     })
     .join("\n");
 }
@@ -90,15 +95,30 @@ function buildAmbassadorPerformanceContent(queries, days = 7, limit = 20) {
 }
 
 function buildAmbassadorInviteesContent(queries, ambassadorId, days = 30, limit = 20) {
+  const breakdown = queries.getAmbassadorInviteBreakdown(ambassadorId, 0) || {};
+  const regular = Number(breakdown.regular_count || 0);
+  const left = Number(breakdown.left_count || 0);
+  const current = Number(breakdown.current_count || 0);
+  const unattributed = Number(breakdown.unattributed_count || 0);
+  const breakdownLine = `You currently have **${current}** invites. (**${regular}** regular, **${left}** left, **0** fake, **0** bonus)`;
+  const attributionLine =
+    unattributed > 0
+      ? `Note: **${unattributed}** regular invites are historical and not yet mapped into left/current split in this bot DB.`
+      : null;
+
   const rows = queries.getAmbassadorInvitees(ambassadorId, days, limit);
   const title = `**Ambassador Invitees (${days}d) - <@${ambassadorId}>**`;
 
   if (!rows.length) {
-    return [title, "No attributed joined users in this period."].join("\n");
+    return [title, breakdownLine, attributionLine, "No attributed joined users in this period."]
+      .filter(Boolean)
+      .join("\n");
   }
 
   return [
     title,
+    breakdownLine,
+    attributionLine,
     rows
       .map((row, idx) => {
         const isGhost = Number(row.total_messages || 0) === 0;
