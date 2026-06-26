@@ -25,6 +25,25 @@ function parseCsvIds(value) {
     .filter(Boolean);
 }
 
+function getAmbassadorMembers(guild, ambassadorRoleIds) {
+  const roles = ambassadorRoleIds.length
+    ? ambassadorRoleIds
+        .map((id) => guild.roles.cache.get(id))
+        .filter(Boolean)
+    : [...guild.roles.cache.values()].filter((role) => /ambassador/i.test(role.name));
+
+  const memberMap = new Map();
+  for (const role of roles) {
+    for (const member of role.members.values()) {
+      if (!member.user.bot) {
+        memberMap.set(member.id, member);
+      }
+    }
+  }
+
+  return [...memberMap.values()];
+}
+
 function getSlashCommands() {
   return [
     new SlashCommandBuilder()
@@ -53,6 +72,17 @@ function getSlashCommands() {
         option
           .setName("days")
           .setDescription("Inactivity window in days (1-90)")
+          .setMinValue(1)
+          .setMaxValue(90)
+      )
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("pulse-ambassadors")
+      .setDescription("Show ambassador invite performance leaderboard")
+      .addIntegerOption((option) =>
+        option
+          .setName("days")
+          .setDescription("Number of days to include (1-90)")
           .setMinValue(1)
           .setMaxValue(90)
       )
@@ -109,6 +139,85 @@ async function buildInviteCache(guild, invitesCache, queries) {
   }
 }
 
+async function syncGuildMembers(guild, queries) {
+  try {
+    const members = await guild.members.fetch();
+    const snapshot = [];
+
+    for (const member of members.values()) {
+      if (member.user.bot) {
+        continue;
+      }
+
+      snapshot.push({
+        userId: member.id,
+        username: member.user.tag,
+        joinedAt: member.joinedAt ? member.joinedAt.toISOString() : new Date().toISOString(),
+      });
+    }
+
+    const result = queries.reconcileGuildMembers(snapshot);
+    console.log(
+      `Synced ${result.synced} active members from guild ${guild.id} (joins +${result.joinsAdded}, leaves +${result.leavesAdded})`
+    );
+  } catch (error) {
+    console.warn("Member sync init failed:", error.message);
+  }
+}
+
+async function provisionAmbassadorInvites(guild, queries, ambassadorRoleIds, inviteChannelId) {
+  if (!inviteChannelId) {
+    return;
+  }
+
+  try {
+    const channel = await guild.channels.fetch(inviteChannelId).catch(() => null);
+    if (!channel || !channel.isTextBased()) {
+      console.warn("Ambassador invite provisioning skipped: invite channel not found or not text-based.");
+      return;
+    }
+
+    const ambassadors = getAmbassadorMembers(guild, ambassadorRoleIds);
+    if (!ambassadors.length) {
+      console.warn("Ambassador invite provisioning skipped: no ambassador members found.");
+      return;
+    }
+
+    const existing = queries.listAmbassadorInvites();
+    const invites = await guild.invites.fetch();
+    const byAmbassadorId = new Map(existing.map((row) => [row.ambassador_id, row]));
+
+    let created = 0;
+    for (const member of ambassadors) {
+      const prev = byAmbassadorId.get(member.id);
+      if (prev && invites.has(prev.code)) {
+        continue;
+      }
+
+      const invite = await channel.createInvite({
+        maxAge: 0,
+        maxUses: 0,
+        unique: true,
+        reason: `Ambassador tracking invite for ${member.user.tag}`,
+      });
+
+      queries.upsertAmbassadorInvite({
+        code: invite.code,
+        ambassadorId: member.id,
+        ambassadorName: member.user.username,
+        channelId: channel.id,
+        createdAt: new Date().toISOString(),
+      });
+
+      created += 1;
+    }
+
+    console.log(`Ambassador invites ready: ${ambassadors.length} ambassadors (${created} newly created)`);
+  } catch (error) {
+    console.warn("Ambassador invite provisioning failed:", error.message);
+  }
+}
+
 async function startBot(options = {}) {
   const token = options.token || process.env.DISCORD_TOKEN;
   const guildId = options.guildId || process.env.GUILD_ID;
@@ -139,7 +248,10 @@ async function startBot(options = {}) {
     adminRoleIds: parseCsvIds(process.env.ADMIN_ROLE_IDS),
   };
 
-  client.once("ready", async () => {
+  const ambassadorRoleIds = parseCsvIds(process.env.AMBASSADOR_ROLE_IDS);
+  const ambassadorInviteChannelId = process.env.AMBASSADOR_INVITE_CHANNEL_ID;
+
+  client.once("clientReady", async () => {
     console.log(`Bot logged in as ${client.user.tag}`);
 
     const guild = guildId
@@ -147,7 +259,14 @@ async function startBot(options = {}) {
       : client.guilds.cache.first();
 
     if (guild) {
+      await syncGuildMembers(guild, queries);
       await buildInviteCache(guild, invitesCache, queries);
+      await provisionAmbassadorInvites(
+        guild,
+        queries,
+        ambassadorRoleIds,
+        ambassadorInviteChannelId
+      );
     }
 
     await registerGuildSlashCommands(client, guildId).catch((error) => {

@@ -58,6 +58,17 @@ function startDashboard(options = {}) {
     res.json(queries.getGhostMembers(days, limit));
   });
 
+  app.get("/api/invite-leaderboard", (req, res) => {
+    const limit = toInt(req.query.limit, 10);
+    res.json(queries.getInviteSnapshotLeaderboard(limit));
+  });
+
+  app.get("/api/ambassador-performance", (req, res) => {
+    const days = toInt(req.query.days, 7);
+    const limit = toInt(req.query.limit, 20);
+    res.json(queries.getAmbassadorPerformance(days, limit));
+  });
+
   app.listen(port, () => {
     console.log(`Dashboard running on http://localhost:${port}`);
   });

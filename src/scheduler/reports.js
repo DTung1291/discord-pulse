@@ -20,6 +20,19 @@ function formatChannelRanking(rows) {
     .join("\n");
 }
 
+function formatAmbassadorPerformance(rows) {
+  if (!rows.length) {
+    return "No ambassador invite data in this period.";
+  }
+
+  return rows
+    .map((row, idx) => {
+      const name = row.ambassador_name || row.ambassador_id;
+      return `${idx + 1}. ${name} (<@${row.ambassador_id}>) - ${row.invited_count} joins`;
+    })
+    .join("\n");
+}
+
 function buildDailyReportContent(queries, days = 1) {
   const summary = queries.getSummary(days);
   return [
@@ -35,6 +48,7 @@ function buildWeeklyReportContent(queries) {
   const inviteBoard = queries.getInviteLeaderboard(7, 10);
   const channelBoard = queries.getChannelRankings(7, 10);
   const ghosts = queries.getGhostMembers(30, 10);
+  const ambassadorBoard = queries.getAmbassadorPerformance(7, 15);
 
   return [
     "**Weekly Discord Pulse Report**",
@@ -44,6 +58,9 @@ function buildWeeklyReportContent(queries) {
     "",
     "Channel Rankings:",
     formatChannelRanking(channelBoard),
+    "",
+    "Ambassador Performance (7d):",
+    formatAmbassadorPerformance(ambassadorBoard),
     "",
     "Ghost Members (no messages in last 30 days):",
     ghosts.length
@@ -61,6 +78,14 @@ function buildGhostMembersContent(queries, days = 30, limit = 20) {
   return [
     `**Ghost Members (${days}d)**`,
     ghosts.map((u) => `- ${u.username} (${u.user_id})`).join("\n"),
+  ].join("\n");
+}
+
+function buildAmbassadorPerformanceContent(queries, days = 7, limit = 20) {
+  const rows = queries.getAmbassadorPerformance(days, limit);
+  return [
+    `**Ambassador Performance (${days}d)**`,
+    formatAmbassadorPerformance(rows),
   ].join("\n");
 }
 
@@ -121,4 +146,5 @@ module.exports = {
   buildDailyReportContent,
   buildWeeklyReportContent,
   buildGhostMembersContent,
+  buildAmbassadorPerformanceContent,
 };

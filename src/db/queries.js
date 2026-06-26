@@ -9,6 +9,34 @@ function createQueries(db) {
       inviter_id = excluded.inviter_id
   `);
 
+  const upsertMemberSnapshotStmt = db.prepare(`
+    INSERT INTO members (user_id, username, joined_at, left_at, inviter_id)
+    VALUES (@user_id, @username, @joined_at, NULL, NULL)
+    ON CONFLICT(user_id) DO UPDATE SET
+      username = excluded.username,
+      joined_at = COALESCE(members.joined_at, excluded.joined_at),
+      left_at = NULL
+  `);
+
+  const selectMemberByIdStmt = db.prepare(`
+    SELECT user_id, left_at
+    FROM members
+    WHERE user_id = ?
+  `);
+
+  const selectHasJoinEventStmt = db.prepare(`
+    SELECT 1
+    FROM join_events
+    WHERE user_id = ?
+    LIMIT 1
+  `);
+
+  const selectActiveMemberIdsStmt = db.prepare(`
+    SELECT user_id
+    FROM members
+    WHERE left_at IS NULL
+  `);
+
   const markMemberLeftStmt = db.prepare(`
     UPDATE members
     SET left_at = @left_at
@@ -37,6 +65,30 @@ function createQueries(db) {
       inviter_id = excluded.inviter_id,
       uses = excluded.uses,
       updated_at = excluded.updated_at
+  `);
+
+  const upsertAmbassadorInviteStmt = db.prepare(`
+    INSERT INTO ambassador_invites (code, ambassador_id, ambassador_name, channel_id, active, created_at)
+    VALUES (@code, @ambassador_id, @ambassador_name, @channel_id, 1, @created_at)
+    ON CONFLICT(code) DO UPDATE SET
+      ambassador_id = excluded.ambassador_id,
+      ambassador_name = excluded.ambassador_name,
+      channel_id = excluded.channel_id,
+      active = 1,
+      created_at = excluded.created_at
+  `);
+
+  const getAmbassadorByInviteCodeStmt = db.prepare(`
+    SELECT ambassador_id, ambassador_name
+    FROM ambassador_invites
+    WHERE code = ? AND active = 1
+    LIMIT 1
+  `);
+
+  const listAmbassadorInvitesStmt = db.prepare(`
+    SELECT code, ambassador_id, ambassador_name, channel_id, active, created_at
+    FROM ambassador_invites
+    WHERE active = 1
   `);
 
   function trackMemberJoin({ userId, username, inviterId, joinedAt }) {
@@ -76,6 +128,69 @@ function createQueries(db) {
     });
   }
 
+  function syncActiveMembers(members) {
+    const tx = db.transaction((rows) => {
+      for (const member of rows) {
+        upsertMemberSnapshotStmt.run({
+          user_id: member.userId,
+          username: member.username,
+          joined_at: member.joinedAt,
+        });
+      }
+    });
+
+    tx(members);
+  }
+
+  function reconcileGuildMembers(members) {
+    const now = new Date().toISOString();
+    let joinsAdded = 0;
+    let leavesAdded = 0;
+
+    const tx = db.transaction((rows) => {
+      const currentIds = new Set();
+
+      for (const member of rows) {
+        currentIds.add(member.userId);
+
+        const existing = selectMemberByIdStmt.get(member.userId);
+        const hasJoinEvent = !!selectHasJoinEventStmt.get(member.userId);
+
+        upsertMemberSnapshotStmt.run({
+          user_id: member.userId,
+          username: member.username,
+          joined_at: member.joinedAt,
+        });
+
+        if (!hasJoinEvent || (existing && existing.left_at)) {
+          insertJoinEventStmt.run({
+            user_id: member.userId,
+            inviter_id: null,
+            joined_at: member.joinedAt || now,
+          });
+          joinsAdded += 1;
+        }
+      }
+
+      const activeRows = selectActiveMemberIdsStmt.all();
+      for (const row of activeRows) {
+        if (!currentIds.has(row.user_id)) {
+          markMemberLeftStmt.run({ user_id: row.user_id, left_at: now });
+          insertLeaveEventStmt.run({ user_id: row.user_id, left_at: now });
+          leavesAdded += 1;
+        }
+      }
+    });
+
+    tx(members);
+
+    return {
+      synced: members.length,
+      joinsAdded,
+      leavesAdded,
+    };
+  }
+
   function updateInviteSnapshot(invites) {
     const now = new Date().toISOString();
     const tx = db.transaction((rows) => {
@@ -90,6 +205,24 @@ function createQueries(db) {
     });
 
     tx(invites);
+  }
+
+  function upsertAmbassadorInvite({ code, ambassadorId, ambassadorName, channelId, createdAt }) {
+    upsertAmbassadorInviteStmt.run({
+      code,
+      ambassador_id: ambassadorId,
+      ambassador_name: ambassadorName,
+      channel_id: channelId,
+      created_at: createdAt || new Date().toISOString(),
+    });
+  }
+
+  function getAmbassadorByInviteCode(code) {
+    return getAmbassadorByInviteCodeStmt.get(code) || null;
+  }
+
+  function listAmbassadorInvites() {
+    return listAmbassadorInvitesStmt.all();
   }
 
   function getSummary(days = 7) {
@@ -204,6 +337,46 @@ function createQueries(db) {
       .all(`-${days} days`, limit);
   }
 
+  function getInviteSnapshotLeaderboard(limit = 10) {
+    return db
+      .prepare(
+        `
+        SELECT
+          s.inviter_id,
+          MAX(m.username) AS inviter_name,
+          SUM(s.uses) AS invited_count
+        FROM invite_snapshots s
+        LEFT JOIN members m ON m.user_id = s.inviter_id
+        WHERE s.inviter_id IS NOT NULL
+        GROUP BY s.inviter_id
+        ORDER BY invited_count DESC
+        LIMIT ?
+      `
+      )
+      .all(limit);
+  }
+
+  function getAmbassadorPerformance(days = 7, limit = 20) {
+    return db
+      .prepare(
+        `
+        SELECT
+          ai.ambassador_id,
+          MAX(ai.ambassador_name) AS ambassador_name,
+          COUNT(je.id) AS invited_count
+        FROM ambassador_invites ai
+        LEFT JOIN join_events je
+          ON je.inviter_id = ai.ambassador_id
+         AND je.joined_at >= datetime('now', ?)
+        WHERE ai.active = 1
+        GROUP BY ai.ambassador_id
+        ORDER BY invited_count DESC, ambassador_name ASC
+        LIMIT ?
+      `
+      )
+      .all(`-${days} days`, limit);
+  }
+
   function getMemberGrowth(days = 30) {
     const joins = db
       .prepare(
@@ -234,7 +407,12 @@ function createQueries(db) {
     trackMemberJoin,
     trackMemberLeave,
     trackMessage,
+    syncActiveMembers,
+    reconcileGuildMembers,
     updateInviteSnapshot,
+    upsertAmbassadorInvite,
+    getAmbassadorByInviteCode,
+    listAmbassadorInvites,
     getSummary,
     getMessageVolume,
     getHourlyHeatmap,
@@ -242,6 +420,8 @@ function createQueries(db) {
     getActiveUsers,
     getGhostMembers,
     getInviteLeaderboard,
+    getInviteSnapshotLeaderboard,
+    getAmbassadorPerformance,
     getMemberGrowth,
   };
 }

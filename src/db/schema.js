@@ -49,10 +49,21 @@ function initDatabase(dbPath) {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS ambassador_invites (
+      code TEXT PRIMARY KEY,
+      ambassador_id TEXT NOT NULL,
+      ambassador_name TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_message_events_created_at ON message_events(created_at);
     CREATE INDEX IF NOT EXISTS idx_message_events_channel_id ON message_events(channel_id);
     CREATE INDEX IF NOT EXISTS idx_join_events_joined_at ON join_events(joined_at);
     CREATE INDEX IF NOT EXISTS idx_leave_events_left_at ON leave_events(left_at);
+    CREATE INDEX IF NOT EXISTS idx_ambassador_invites_ambassador_id ON ambassador_invites(ambassador_id);
+    CREATE INDEX IF NOT EXISTS idx_ambassador_invites_active ON ambassador_invites(active);
   `);
 
   return db;

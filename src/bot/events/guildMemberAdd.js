@@ -1,6 +1,7 @@
 async function onGuildMemberAdd(member, context) {
   const { invitesCache, queries } = context;
   let inviterId = null;
+  let usedInviteCode = null;
 
   try {
     const newInvites = await member.guild.invites.fetch();
@@ -9,8 +10,16 @@ async function onGuildMemberAdd(member, context) {
     for (const invite of newInvites.values()) {
       const prevUses = oldInvites.get(invite.code) || 0;
       if ((invite.uses || 0) > prevUses) {
+        usedInviteCode = invite.code;
         inviterId = invite.inviter ? invite.inviter.id : null;
         break;
+      }
+    }
+
+    if (usedInviteCode) {
+      const ambassador = queries.getAmbassadorByInviteCode(usedInviteCode);
+      if (ambassador) {
+        inviterId = ambassador.ambassador_id;
       }
     }
 

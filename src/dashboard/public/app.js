@@ -6,6 +6,9 @@ async function getJson(url) {
   return res.json();
 }
 
+let messageVolumeChart;
+let memberGrowthChart;
+
 function renderSummary(summary) {
   const container = document.getElementById("summary-cards");
   const items = [
@@ -30,7 +33,11 @@ function renderSummary(summary) {
 function renderMessageVolume(rows) {
   const ctx = document.getElementById("messageVolumeChart");
 
-  new Chart(ctx, {
+  if (messageVolumeChart) {
+    messageVolumeChart.destroy();
+  }
+
+  messageVolumeChart = new Chart(ctx, {
     type: "line",
     data: {
       labels: rows.map((row) => row.day),
@@ -62,7 +69,11 @@ function renderMemberGrowth(data) {
 
   const ctx = document.getElementById("memberGrowthChart");
 
-  new Chart(ctx, {
+  if (memberGrowthChart) {
+    memberGrowthChart.destroy();
+  }
+
+  memberGrowthChart = new Chart(ctx, {
     type: "bar",
     data: {
       labels,
@@ -102,22 +113,64 @@ function renderChannelRanking(rows) {
     .join("");
 }
 
-async function init() {
+function renderInviteRanking(rows) {
+  const list = document.getElementById("invite-ranking-list");
+
+  if (!rows.length) {
+    list.innerHTML = "<li>No invite data yet.</li>";
+    return;
+  }
+
+  list.innerHTML = rows
+    .map((row) => {
+      const label = row.inviter_name || `User ${row.inviter_id}`;
+      return `<li>${label} (${row.inviter_id}) - ${row.invited_count} uses</li>`;
+    })
+    .join("");
+}
+
+function renderAmbassadorPerformance(rows) {
+  const list = document.getElementById("ambassador-performance-list");
+
+  if (!rows.length) {
+    list.innerHTML = "<li>No ambassador data yet.</li>";
+    return;
+  }
+
+  list.innerHTML = rows
+    .map((row) => {
+      const name = row.ambassador_name || `User ${row.ambassador_id}`;
+      return `<li>${name} (${row.ambassador_id}) - ${row.invited_count} joins</li>`;
+    })
+    .join("");
+}
+
+async function loadDashboard() {
   try {
-    const [summary, volume, growth, rankings] = await Promise.all([
+    const [summary, volume, growth, rankings, inviteRankings, ambassadorPerformance] =
+      await Promise.all([
       getJson("/api/summary?days=7"),
       getJson("/api/message-volume?days=30"),
       getJson("/api/member-growth?days=30"),
       getJson("/api/channel-rankings?days=7&limit=10"),
+      getJson("/api/invite-leaderboard?limit=10"),
+      getJson("/api/ambassador-performance?days=7&limit=20"),
     ]);
 
     renderSummary(summary);
     renderMessageVolume(volume);
     renderMemberGrowth(growth);
     renderChannelRanking(rankings);
+    renderInviteRanking(inviteRankings);
+    renderAmbassadorPerformance(ambassadorPerformance);
   } catch (error) {
     console.error(error);
   }
+}
+
+async function init() {
+  await loadDashboard();
+  setInterval(loadDashboard, 30000);
 }
 
 init();
