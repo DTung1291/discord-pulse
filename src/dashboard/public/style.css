@@ -173,6 +173,11 @@ body {
   font-size: 13px;
 }
 
+.subtle {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 #channel-ranking-list {
   margin: 0;
   padding-left: 20px;

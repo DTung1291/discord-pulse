@@ -43,6 +43,12 @@ function initDatabase(dbPath) {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS channels (
+      channel_id TEXT PRIMARY KEY,
+      channel_name TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS invite_snapshots (
       code TEXT PRIMARY KEY,
       inviter_id TEXT,
@@ -81,6 +87,7 @@ function initDatabase(dbPath) {
 
     CREATE INDEX IF NOT EXISTS idx_message_events_created_at ON message_events(created_at);
     CREATE INDEX IF NOT EXISTS idx_message_events_channel_id ON message_events(channel_id);
+    CREATE INDEX IF NOT EXISTS idx_channels_name ON channels(channel_name);
     CREATE INDEX IF NOT EXISTS idx_join_events_joined_at ON join_events(joined_at);
     CREATE INDEX IF NOT EXISTS idx_leave_events_left_at ON leave_events(left_at);
     CREATE INDEX IF NOT EXISTS idx_ambassador_invites_ambassador_id ON ambassador_invites(ambassador_id);

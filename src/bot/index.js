@@ -190,6 +190,29 @@ async function syncGuildMembers(guild, queries) {
   }
 }
 
+async function syncGuildChannels(guild, queries) {
+  try {
+    const channels = await guild.channels.fetch();
+    const rows = [];
+
+    for (const channel of channels.values()) {
+      if (!channel || !channel.id || !channel.name) {
+        continue;
+      }
+
+      rows.push({
+        channelId: channel.id,
+        channelName: channel.name,
+      });
+    }
+
+    queries.syncChannels(rows);
+    console.log(`Synced ${rows.length} channels metadata from guild ${guild.id}`);
+  } catch (error) {
+    console.warn("Channel metadata sync failed:", error.message);
+  }
+}
+
 async function provisionAmbassadorInvites(guild, queries, ambassadorRoleIds, inviteChannelId) {
   if (!inviteChannelId) {
     return;
@@ -358,6 +381,7 @@ async function startBot(options = {}) {
 
     if (guild) {
       await syncGuildMembers(guild, queries);
+      await syncGuildChannels(guild, queries);
       await buildInviteCache(guild, invitesCache, queries);
       await provisionAmbassadorInvites(
         guild,

@@ -16,6 +16,7 @@ function onMessageCreate(message, context) {
   queries.trackMessage({
     userId: message.author.id,
     channelId: message.channel.id,
+    channelName: message.channel.name || message.channel.id,
     createdAt: message.createdAt.toISOString(),
   });
 

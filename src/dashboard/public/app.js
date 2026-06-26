@@ -147,7 +147,11 @@ function renderChannelRanking(rows) {
   }
 
   list.innerHTML = rows
-    .map((row) => `<li>#${row.channel_id} - ${row.count} messages</li>`)
+    .map((row) => {
+      const channelName = escapeHtml(row.channel_name || row.channel_id);
+      const channelId = escapeHtml(row.channel_id);
+      return `<li>#${channelName} <span class="subtle">(${channelId})</span> - ${row.count} messages</li>`;
+    })
     .join("");
 }
 
@@ -414,8 +418,6 @@ function renderAmbassadorPerformance(rows, ambassadorPostsMap = new Map(), ambas
       const currentCount = Number(row.current_count || 0);
       const leftCount = Number(row.left_count || 0);
       const fakeCount = Number(row.fake_count || 0);
-      const bonusCount = Number(row.bonus_count || 0);
-      const unattributedCount = Number(row.unattributed_count || 0);
       const inviteHtml = inviteLink
         ? `<div class="invitee-meta"><span>invite: <a href="${inviteLink}" target="_blank" rel="noreferrer noopener">${escapeHtml(inviteCode)}</a></span></div>`
         : '<div class="invitee-meta"><span>invite: none</span></div>';
@@ -425,12 +427,6 @@ function renderAmbassadorPerformance(rows, ambassadorPostsMap = new Map(), ambas
           <span>regular: <strong>${regularCount}</strong></span>
           <span>left: <strong>${leftCount}</strong></span>
           <span>fake: <strong>${fakeCount}</strong></span>
-          <span>bonus: <strong>${bonusCount}</strong></span>
-          ${
-            unattributedCount > 0
-              ? `<span class="breakdown-note">unattributed: ${unattributedCount}</span>`
-              : ""
-          }
         </div>
       `;
       const postHtml = postRows.length
@@ -466,12 +462,6 @@ function renderAmbassadorPerformance(rows, ambassadorPostsMap = new Map(), ambas
           <span class="metric-chip regular">regular: ${regularCount}</span>
           <span class="metric-chip left">left: ${leftCount}</span>
           <span class="metric-chip">fake: ${fakeCount}</span>
-          <span class="metric-chip">bonus: ${bonusCount}</span>
-          ${
-            unattributedCount > 0
-              ? `<span class="metric-chip unattributed">unattributed: ${unattributedCount}</span>`
-              : ""
-          }
         </div>
       `;
 

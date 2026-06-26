@@ -60,6 +60,14 @@ function createQueries(db) {
     VALUES (@user_id, @channel_id, @created_at)
   `);
 
+  const upsertChannelStmt = db.prepare(`
+    INSERT INTO channels (channel_id, channel_name, updated_at)
+    VALUES (@channel_id, @channel_name, @updated_at)
+    ON CONFLICT(channel_id) DO UPDATE SET
+      channel_name = excluded.channel_name,
+      updated_at = excluded.updated_at
+  `);
+
   const upsertInviteSnapshotStmt = db.prepare(`
     INSERT INTO invite_snapshots (code, inviter_id, uses, updated_at)
     VALUES (@code, @inviter_id, @uses, @updated_at)
@@ -187,12 +195,39 @@ function createQueries(db) {
     tx();
   }
 
-  function trackMessage({ userId, channelId, createdAt }) {
+  function trackMessage({ userId, channelId, channelName, createdAt }) {
     insertMessageStmt.run({
       user_id: userId,
       channel_id: channelId,
       created_at: createdAt,
     });
+
+    if (channelName) {
+      upsertChannelStmt.run({
+        channel_id: channelId,
+        channel_name: channelName,
+        updated_at: createdAt,
+      });
+    }
+  }
+
+  function syncChannels(channels) {
+    const now = new Date().toISOString();
+    const tx = db.transaction((rows) => {
+      for (const channel of rows) {
+        if (!channel.channelId || !channel.channelName) {
+          continue;
+        }
+
+        upsertChannelStmt.run({
+          channel_id: channel.channelId,
+          channel_name: channel.channelName,
+          updated_at: now,
+        });
+      }
+    });
+
+    tx(channels || []);
   }
 
   function syncActiveMembers(members) {
@@ -388,10 +423,14 @@ function createQueries(db) {
     return db
       .prepare(
         `
-        SELECT channel_id, COUNT(*) AS count
-        FROM message_events
-        WHERE created_at >= datetime('now', ?)
-        GROUP BY channel_id
+        SELECT
+          me.channel_id,
+          COALESCE(c.channel_name, me.channel_id) AS channel_name,
+          COUNT(*) AS count
+        FROM message_events me
+        LEFT JOIN channels c ON c.channel_id = me.channel_id
+        WHERE me.created_at >= datetime('now', ?)
+        GROUP BY me.channel_id
         ORDER BY count DESC
         LIMIT ?
       `
@@ -730,6 +769,7 @@ function createQueries(db) {
     trackMemberJoin,
     trackMemberLeave,
     trackMessage,
+    syncChannels,
     syncActiveMembers,
     reconcileGuildMembers,
     updateInviteSnapshot,
