@@ -20,6 +20,14 @@ function onMessageCreate(message, context) {
     createdAt: message.createdAt.toISOString(),
   });
 
+  queries.trackMemberProfile({
+    userId: message.author.id,
+    username: message.author.tag,
+    avatarUrl: message.author.avatarURL() || null,
+    capturedAt: message.createdAt.toISOString(),
+    source: "message",
+  });
+
   if (!ambassadorPostChannelId || message.channel.id !== ambassadorPostChannelId) {
     return;
   }

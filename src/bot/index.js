@@ -115,6 +115,35 @@ function getSlashCommands() {
           .setMaxValue(30)
       )
       .toJSON(),
+    new SlashCommandBuilder()
+      .setName("pulse-leavers")
+      .setDescription("List members who left recently with profile signals")
+      .addIntegerOption((option) =>
+        option
+          .setName("days")
+          .setDescription("Number of days to include (1-90)")
+          .setMinValue(1)
+          .setMaxValue(90)
+      )
+      .addIntegerOption((option) =>
+        option
+          .setName("limit")
+          .setDescription("Maximum members to list (1-30)")
+          .setMinValue(1)
+          .setMaxValue(30)
+      )
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("pulse-leaves-daily")
+      .setDescription("Show leave counts by day")
+      .addIntegerOption((option) =>
+        option
+          .setName("days")
+          .setDescription("Number of days to include (1-90)")
+          .setMinValue(1)
+          .setMaxValue(90)
+      )
+      .toJSON(),
   ];
 }
 
@@ -176,6 +205,7 @@ async function syncGuildMembers(guild, queries) {
       snapshot.push({
         userId: member.id,
         username: member.user.tag,
+        avatarUrl: member.user.avatarURL() || null,
         joinedAt: member.joinedAt ? member.joinedAt.toISOString() : new Date().toISOString(),
         isBot: member.user.bot,
       });

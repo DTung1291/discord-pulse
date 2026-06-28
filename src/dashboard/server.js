@@ -96,6 +96,43 @@ function startDashboard(options = {}) {
     res.json(queries.getGhostMembers(days, limit));
   });
 
+  app.get("/api/leavers", (req, res) => {
+    const days = toInt(req.query.days, 7);
+    const limit = toInt(req.query.limit, 20);
+    res.json(queries.getRecentLeavers(days, limit));
+  });
+
+  app.get("/api/leavers-by-day", (req, res) => {
+    const days = toInt(req.query.days, 30);
+    const perDayLimit = toInt(req.query.perDayLimit, 30);
+    const growth = queries.getMemberGrowth(days);
+    const dayCounts = new Map((growth?.leaves || []).map((row) => [row.day, Number(row.count || 0)]));
+    const detailRows = queries.getLeaversByDayDetails(days, perDayLimit);
+
+    const detailMap = new Map();
+    for (const row of detailRows) {
+      const day = String(row.day || "");
+      if (!detailMap.has(day)) {
+        detailMap.set(day, []);
+      }
+      detailMap.get(day).push(row);
+    }
+
+    const rows = Array.from(dayCounts.entries())
+      .sort((a, b) => String(b[0]).localeCompare(String(a[0])))
+      .map(([day, count]) => ({
+        day,
+        count,
+        leavers: detailMap.get(day) || [],
+      }));
+
+    res.json({
+      days,
+      per_day_limit: perDayLimit,
+      rows,
+    });
+  });
+
   app.get("/api/invite-leaderboard", (req, res) => {
     const limit = toInt(req.query.limit, 10);
     res.json(queries.getInviteSnapshotLeaderboard(limit));

@@ -34,6 +34,7 @@ function escapeHtml(value) {
 let messageVolumeChart;
 let memberGrowthChart;
 let ambassadorCompareChart;
+let leaveExplorerChart;
 const FULL_REFRESH_MS = 30000;
 const CHANNEL_RANKING_REFRESH_MS = 5000;
 
@@ -136,6 +137,157 @@ function renderMemberGrowth(data) {
       },
     },
   });
+}
+
+function renderLeaverTrustRow(row) {
+  const username = escapeHtml(row.username || row.user_id);
+  const userId = escapeHtml(row.user_id);
+  const inviter = row.inviter_id
+    ? `<span>inviter: ${escapeHtml(row.inviter_id)}</span>`
+    : "<span>inviter: unknown</span>";
+  const leftAt = row.left_at ? new Date(row.left_at).toLocaleString() : "-";
+  const activityClass = Number(row.messages_7d_before_leave || 0) > 0 ? "active" : "ghost";
+  const activityLabel =
+    Number(row.messages_7d_before_leave || 0) > 0 ? "ACTIVE BEFORE LEAVE" : "LOW-ACTIVITY";
+  const hasAvatar = Number(row.has_avatar || 0) === 1;
+  const usernameEqualsId = Number(row.username_equals_user_id || 0) === 1;
+  const suspiciousPattern = Number(row.suspicious_username_pattern || 0) === 1;
+  const riskLevel = String(row.trust_risk_level || "unknown").toUpperCase();
+  const trustScore = Number(row.trust_score || 0);
+  const riskClass = riskLevel === "HIGH" ? "ghost" : riskLevel === "MEDIUM" ? "warn" : "active";
+
+  return `
+    <li>
+      <div class="invitee-header">
+        <span>${username} (${userId})</span>
+        <span class="badge ${activityClass}">${activityLabel}</span>
+      </div>
+      <div class="invitee-meta">
+        <span class="badge ${riskClass}">RISK ${riskLevel} (${trustScore})</span>
+        <span>avatar: ${hasAvatar ? "yes" : "no"}</span>
+        <span>name=id: ${usernameEqualsId ? "yes" : "no"}</span>
+        <span>name-pattern: ${suspiciousPattern ? "suspicious" : "normal"}</span>
+        <span>username changes: ${Number(row.username_change_count || 0)}</span>
+        <span>similar-name group: ${Number(row.similar_name_group_size || 1)}</span>
+        <span>stay: ${Math.max(Number(row.stay_days || 0), 0)}d</span>
+        <span>total msgs: ${Number(row.total_messages || 0)}</span>
+        <span>7d msgs before leave: ${Number(row.messages_7d_before_leave || 0)}</span>
+        ${inviter}
+        <span>left: ${escapeHtml(leftAt)}</span>
+      </div>
+    </li>
+  `;
+}
+
+function renderLeaveExplorer(rows, days) {
+  const titleEl = document.getElementById("leave-explorer-title");
+  const wrap = document.getElementById("leave-explorer-wrap");
+  const chartEl = document.getElementById("leaveExplorerChart");
+
+  if (titleEl) {
+    titleEl.textContent = `Leave Explorer (${days} days)`;
+  }
+
+  const chartRows = [...(rows || [])].sort((a, b) => String(a.day).localeCompare(String(b.day)));
+  if (leaveExplorerChart) {
+    leaveExplorerChart.destroy();
+  }
+
+  if (chartEl) {
+    leaveExplorerChart = new Chart(chartEl, {
+      type: "bar",
+      data: {
+        labels: chartRows.map((row) => row.day),
+        datasets: [
+          {
+            label: "Leaves",
+            data: chartRows.map((row) => Number(row.count || 0)),
+            backgroundColor: "rgba(239, 131, 84, 0.7)",
+            borderRadius: 6,
+          },
+        ],
+      },
+      options: {
+        plugins: { legend: { labels: { color: "#e7ecf8" } } },
+        scales: {
+          x: { ticks: { color: "#a5b1ca" }, grid: { color: "#223052" } },
+          y: { ticks: { color: "#a5b1ca" }, grid: { color: "#223052" }, beginAtZero: true },
+        },
+      },
+    });
+  }
+
+  if (!wrap) {
+    return;
+  }
+
+  if (!rows || !rows.length) {
+    wrap.innerHTML = '<div class="invitee-empty">No leave events in this period.</div>';
+    return;
+  }
+
+  wrap.innerHTML = rows
+    .map((dayRow) => {
+      const day = escapeHtml(dayRow.day || "-");
+      const count = Number(dayRow.count || 0);
+      const leavers = Array.isArray(dayRow.leavers) ? dayRow.leavers : [];
+      const detailHtml = leavers.length
+        ? `<ul class="invitee-list leavers-list">${leavers.map((row) => renderLeaverTrustRow(row)).join("")}</ul>`
+        : '<div class="invitee-empty">No detailed rows stored for this day window.</div>';
+
+      return `
+        <details class="leave-day-details">
+          <summary>
+            <span>${day}</span>
+            <strong>${count} leaves</strong>
+          </summary>
+          <div class="leave-day-content">${detailHtml}</div>
+        </details>
+      `;
+    })
+    .join("");
+}
+
+function getLeaveExplorerFilters() {
+  const daysEl = document.getElementById("leave-explorer-days");
+  const perDayLimitEl = document.getElementById("leave-explorer-per-day-limit");
+
+  const days = Number(daysEl ? daysEl.value : 30);
+  const perDayLimit = Number(perDayLimitEl ? perDayLimitEl.value : 30);
+
+  return {
+    days: Number.isFinite(days) && days > 0 ? days : 30,
+    perDayLimit: Number.isFinite(perDayLimit) && perDayLimit > 0 ? perDayLimit : 30,
+  };
+}
+
+async function loadLeaveExplorer() {
+  const { days, perDayLimit } = getLeaveExplorerFilters();
+  const data = await getJson(
+    `/api/leavers-by-day?days=${encodeURIComponent(days)}&perDayLimit=${encodeURIComponent(perDayLimit)}`
+  );
+  renderLeaveExplorer(data?.rows || [], days);
+}
+
+function setupLeaveExplorerControls() {
+  const daysEl = document.getElementById("leave-explorer-days");
+  const perDayLimitEl = document.getElementById("leave-explorer-per-day-limit");
+
+  if (daysEl) {
+    daysEl.addEventListener("change", () => {
+      loadLeaveExplorer().catch((error) => {
+        console.error(error);
+      });
+    });
+  }
+
+  if (perDayLimitEl) {
+    perDayLimitEl.addEventListener("change", () => {
+      loadLeaveExplorer().catch((error) => {
+        console.error(error);
+      });
+    });
+  }
 }
 
 function renderChannelRanking(rows) {
@@ -513,7 +665,16 @@ function renderAmbassadorPerformance(rows, ambassadorPostsMap = new Map(), ambas
 
 async function loadDashboard() {
   try {
-    const [summary, volume, growth, rankings, inviteRankings, ambassadorPerformance, ambassadorPosts, ambassadorInvites] =
+    const [
+      summary,
+      volume,
+      growth,
+      rankings,
+      inviteRankings,
+      ambassadorPerformance,
+      ambassadorPosts,
+      ambassadorInvites,
+    ] =
       await Promise.all([
         getJson("/api/summary?days=7"),
         getJson("/api/message-volume?days=30"),
@@ -532,6 +693,7 @@ async function loadDashboard() {
     renderMemberGrowth(growth);
     renderChannelRanking(rankings);
     renderInviteRanking(inviteRankings);
+    await loadLeaveExplorer();
     const ambassadorPostsMap = mapAmbassadorPostsById(ambassadorPosts);
     const ambassadorInviteMap = mapAmbassadorInviteById(ambassadorInvites);
     renderAmbassadorCompareChart(ambassadorPerformance, ambassadorPostsMap);
@@ -597,6 +759,7 @@ function setupInviteTrackerSyncForm() {
 
 async function init() {
   setupInviteTrackerSyncForm();
+  setupLeaveExplorerControls();
   await loadDashboard();
   setInterval(loadDashboard, FULL_REFRESH_MS);
   setInterval(refreshChannelRankingLive, CHANNEL_RANKING_REFRESH_MS);

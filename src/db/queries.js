@@ -1,9 +1,10 @@
 function createQueries(db) {
   const upsertMemberStmt = db.prepare(`
-    INSERT INTO members (user_id, username, joined_at, left_at, inviter_id, is_bot)
-    VALUES (@user_id, @username, @joined_at, NULL, @inviter_id, @is_bot)
+    INSERT INTO members (user_id, username, avatar_url, joined_at, left_at, inviter_id, is_bot)
+    VALUES (@user_id, @username, @avatar_url, @joined_at, NULL, @inviter_id, @is_bot)
     ON CONFLICT(user_id) DO UPDATE SET
       username = excluded.username,
+      avatar_url = excluded.avatar_url,
       joined_at = excluded.joined_at,
       left_at = NULL,
       inviter_id = excluded.inviter_id,
@@ -11,19 +12,28 @@ function createQueries(db) {
   `);
 
   const upsertMemberSnapshotStmt = db.prepare(`
-    INSERT INTO members (user_id, username, joined_at, left_at, inviter_id, is_bot)
-    VALUES (@user_id, @username, @joined_at, NULL, NULL, @is_bot)
+    INSERT INTO members (user_id, username, avatar_url, joined_at, left_at, inviter_id, is_bot)
+    VALUES (@user_id, @username, @avatar_url, @joined_at, NULL, NULL, @is_bot)
     ON CONFLICT(user_id) DO UPDATE SET
       username = excluded.username,
+      avatar_url = COALESCE(excluded.avatar_url, members.avatar_url),
       joined_at = COALESCE(members.joined_at, excluded.joined_at),
       left_at = NULL,
       is_bot = excluded.is_bot
   `);
 
   const selectMemberByIdStmt = db.prepare(`
-    SELECT user_id, left_at
+    SELECT user_id, username, avatar_url, left_at
     FROM members
     WHERE user_id = ?
+  `);
+
+  const updateMemberIdentityStmt = db.prepare(`
+    UPDATE members
+    SET
+      username = COALESCE(@username, username),
+      avatar_url = COALESCE(@avatar_url, avatar_url)
+    WHERE user_id = @user_id
   `);
 
   const selectHasJoinEventStmt = db.prepare(`
@@ -53,6 +63,19 @@ function createQueries(db) {
   const insertLeaveEventStmt = db.prepare(`
     INSERT INTO leave_events (user_id, left_at)
     VALUES (@user_id, @left_at)
+  `);
+
+  const selectLatestProfileStmt = db.prepare(`
+    SELECT username, avatar_url
+    FROM member_profile_history
+    WHERE user_id = ?
+    ORDER BY captured_at DESC
+    LIMIT 1
+  `);
+
+  const insertMemberProfileStmt = db.prepare(`
+    INSERT INTO member_profile_history (user_id, username, avatar_url, captured_at, source)
+    VALUES (@user_id, @username, @avatar_url, @captured_at, @source)
   `);
 
   const insertMessageStmt = db.prepare(`
@@ -165,10 +188,35 @@ function createQueries(db) {
     LIMIT 1
   `);
 
-  function trackMemberJoin({ userId, username, inviterId, joinedAt, isBot }) {
+  function trackMemberProfile({ userId, username, avatarUrl, capturedAt, source }) {
+    if (!userId || !username) {
+      return;
+    }
+
+    const latest = selectLatestProfileStmt.get(userId);
+    const latestUsername = latest ? String(latest.username || "") : "";
+    const latestAvatar = latest ? String(latest.avatar_url || "") : "";
+    const nextUsername = String(username || "");
+    const nextAvatar = String(avatarUrl || "");
+
+    if (latest && latestUsername === nextUsername && latestAvatar === nextAvatar) {
+      return;
+    }
+
+    insertMemberProfileStmt.run({
+      user_id: userId,
+      username: nextUsername,
+      avatar_url: avatarUrl || null,
+      captured_at: capturedAt || new Date().toISOString(),
+      source: source || null,
+    });
+  }
+
+  function trackMemberJoin({ userId, username, avatarUrl, inviterId, joinedAt, isBot }) {
     const payload = {
       user_id: userId,
       username,
+      avatar_url: avatarUrl || null,
       joined_at: joinedAt,
       inviter_id: inviterId || null,
       is_bot: isBot ? 1 : 0,
@@ -181,15 +229,36 @@ function createQueries(db) {
         inviter_id: inviterId || null,
         joined_at: joinedAt,
       });
+      trackMemberProfile({
+        userId,
+        username,
+        avatarUrl,
+        capturedAt: joinedAt,
+        source: "join",
+      });
     });
 
     tx();
   }
 
-  function trackMemberLeave({ userId, leftAt }) {
+  function trackMemberLeave({ userId, leftAt, username, avatarUrl }) {
     const tx = db.transaction(() => {
+      updateMemberIdentityStmt.run({
+        user_id: userId,
+        username: username || null,
+        avatar_url: avatarUrl || null,
+      });
       markMemberLeftStmt.run({ user_id: userId, left_at: leftAt });
       insertLeaveEventStmt.run({ user_id: userId, left_at: leftAt });
+      if (username) {
+        trackMemberProfile({
+          userId,
+          username,
+          avatarUrl,
+          capturedAt: leftAt,
+          source: "leave",
+        });
+      }
     });
 
     tx();
@@ -236,8 +305,16 @@ function createQueries(db) {
         upsertMemberSnapshotStmt.run({
           user_id: member.userId,
           username: member.username,
+          avatar_url: member.avatarUrl || null,
           joined_at: member.joinedAt,
           is_bot: member.isBot ? 1 : 0,
+        });
+
+        trackMemberProfile({
+          userId: member.userId,
+          username: member.username,
+          avatarUrl: member.avatarUrl || null,
+          source: "sync",
         });
       }
     });
@@ -262,8 +339,16 @@ function createQueries(db) {
         upsertMemberSnapshotStmt.run({
           user_id: member.userId,
           username: member.username,
+          avatar_url: member.avatarUrl || null,
           joined_at: member.joinedAt,
           is_bot: member.isBot ? 1 : 0,
+        });
+
+        trackMemberProfile({
+          userId: member.userId,
+          username: member.username,
+          avatarUrl: member.avatarUrl || null,
+          source: "sync",
         });
 
         if (!hasJoinEvent || (existing && existing.left_at)) {
@@ -698,6 +783,218 @@ function createQueries(db) {
     return { joins, leaves };
   }
 
+  function enrichLeaversTrust(rows) {
+    function normalizedUsernameKey(value) {
+      return String(value || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "")
+        .replace(/[0-9]/g, "#")
+        .replace(/(.)\1+/g, "$1")
+        .slice(0, 16);
+    }
+
+    function hasSuspiciousUsernamePattern(value) {
+      const v = String(value || "").toLowerCase();
+      if (!v) {
+        return false;
+      }
+
+      return /(.)\1{3,}/.test(v) || /\d{5,}/.test(v) || /^[a-z]{1,3}\d{6,}$/.test(v);
+    }
+
+    const keyCounts = new Map();
+    for (const row of rows) {
+      const key = normalizedUsernameKey(row.username);
+      keyCounts.set(key, (keyCounts.get(key) || 0) + 1);
+    }
+
+    return rows.map((row) => {
+      const hasAvatar = !!String(row.avatar_url || "").trim();
+      const usernameEqualsUserId =
+        String(row.username || "").toLowerCase() === String(row.user_id || "").toLowerCase();
+      const suspiciousUsernamePattern = hasSuspiciousUsernamePattern(row.username);
+      const similarNameGroupSize = keyCounts.get(normalizedUsernameKey(row.username)) || 1;
+      const usernameChangeCount = Number(row.username_change_count || 0);
+
+      let trustScore = 100;
+      if (!hasAvatar) trustScore -= 25;
+      if (usernameEqualsUserId) trustScore -= 25;
+      if (suspiciousUsernamePattern) trustScore -= 20;
+      if (similarNameGroupSize >= 3) trustScore -= 15;
+      if (Number(row.messages_7d_before_leave || 0) === 0) trustScore -= 10;
+      if (usernameChangeCount >= 3) trustScore -= 10;
+      trustScore = Math.max(0, trustScore);
+
+      const riskLevel = trustScore <= 40 ? "high" : trustScore <= 70 ? "medium" : "low";
+
+      return {
+        ...row,
+        has_avatar: hasAvatar ? 1 : 0,
+        username_equals_user_id: usernameEqualsUserId ? 1 : 0,
+        suspicious_username_pattern: suspiciousUsernamePattern ? 1 : 0,
+        similar_name_group_size: similarNameGroupSize,
+        username_change_count: usernameChangeCount,
+        trust_score: trustScore,
+        trust_risk_level: riskLevel,
+      };
+    });
+  }
+
+  function getLeaversByDayDetails(days = 30, perDayLimit = 30) {
+    const rows = db
+      .prepare(
+        `
+        WITH ranked AS (
+          SELECT
+            DATE(le.left_at) AS day,
+            le.user_id,
+            COALESCE(
+              (
+                SELECT mph.username
+                FROM member_profile_history mph
+                WHERE mph.user_id = le.user_id
+                  AND mph.captured_at <= le.left_at
+                ORDER BY mph.captured_at DESC
+                LIMIT 1
+              ),
+              m.username,
+              le.user_id
+            ) AS username,
+            COALESCE(
+              (
+                SELECT mph.avatar_url
+                FROM member_profile_history mph
+                WHERE mph.user_id = le.user_id
+                  AND mph.captured_at <= le.left_at
+                ORDER BY mph.captured_at DESC
+                LIMIT 1
+              ),
+              m.avatar_url,
+              ''
+            ) AS avatar_url,
+            m.inviter_id,
+            COALESCE(
+              (
+                SELECT MIN(je.joined_at)
+                FROM join_events je
+                WHERE je.user_id = le.user_id
+                  AND je.joined_at <= le.left_at
+              ),
+              m.joined_at
+            ) AS joined_at,
+            le.left_at,
+            CAST(
+              (
+                julianday(COALESCE(le.left_at, datetime('now'))) -
+                julianday(
+                  COALESCE(
+                    (
+                      SELECT MIN(je.joined_at)
+                      FROM join_events je
+                      WHERE je.user_id = le.user_id
+                        AND je.joined_at <= le.left_at
+                    ),
+                    m.joined_at,
+                    le.left_at
+                  )
+                )
+              ) AS INTEGER
+            ) AS stay_days,
+            COALESCE((SELECT COUNT(*) FROM message_events me WHERE me.user_id = le.user_id), 0) AS total_messages,
+            COALESCE(
+              (
+                SELECT COUNT(*)
+                FROM message_events me
+                WHERE me.user_id = le.user_id
+                  AND me.created_at >= datetime(COALESCE(le.left_at, datetime('now')), '-7 days')
+                  AND me.created_at <= COALESCE(le.left_at, datetime('now'))
+              ),
+              0
+            ) AS messages_7d_before_leave,
+            COALESCE((SELECT MAX(me.created_at) FROM message_events me WHERE me.user_id = le.user_id), '') AS last_message_at,
+            COALESCE(
+              (
+                SELECT COUNT(DISTINCT mph.username)
+                FROM member_profile_history mph
+                WHERE mph.user_id = le.user_id
+                  AND mph.captured_at <= le.left_at
+              ),
+              0
+            ) AS username_change_count,
+            ROW_NUMBER() OVER (PARTITION BY DATE(le.left_at) ORDER BY le.left_at DESC) AS rn
+          FROM leave_events le
+          LEFT JOIN members m ON m.user_id = le.user_id
+          WHERE le.left_at >= datetime('now', ?)
+            AND COALESCE(m.is_bot, 0) = 0
+        )
+        SELECT
+          day,
+          user_id,
+          username,
+          avatar_url,
+          inviter_id,
+          joined_at,
+          left_at,
+          stay_days,
+          total_messages,
+          messages_7d_before_leave,
+          last_message_at,
+          username_change_count
+        FROM ranked
+        WHERE rn <= ?
+        ORDER BY day DESC, left_at DESC
+      `
+      )
+      .all(`-${days} days`, perDayLimit);
+
+    return enrichLeaversTrust(rows);
+  }
+
+  function getRecentLeavers(days = 7, limit = 20) {
+    const rows = db
+      .prepare(
+        `
+        SELECT
+          m.user_id,
+          COALESCE(m.username, m.user_id) AS username,
+          COALESCE(m.avatar_url, '') AS avatar_url,
+          m.inviter_id,
+          m.joined_at,
+          m.left_at,
+          CAST((julianday(COALESCE(m.left_at, datetime('now'))) - julianday(m.joined_at)) AS INTEGER) AS stay_days,
+          COALESCE((SELECT COUNT(*) FROM message_events me WHERE me.user_id = m.user_id), 0) AS total_messages,
+          COALESCE(
+            (
+              SELECT COUNT(*)
+              FROM message_events me
+              WHERE me.user_id = m.user_id
+                AND me.created_at >= datetime(COALESCE(m.left_at, datetime('now')), '-7 days')
+                AND me.created_at <= COALESCE(m.left_at, datetime('now'))
+            ),
+            0
+          ) AS messages_7d_before_leave,
+          COALESCE((SELECT MAX(me.created_at) FROM message_events me WHERE me.user_id = m.user_id), '') AS last_message_at,
+          COALESCE(
+            (
+              SELECT COUNT(DISTINCT mph.username)
+              FROM member_profile_history mph
+              WHERE mph.user_id = m.user_id
+            ),
+            0
+          ) AS username_change_count
+        FROM members m
+        WHERE m.left_at IS NOT NULL
+          AND m.left_at >= datetime('now', ?)
+          AND COALESCE(m.is_bot, 0) = 0
+        ORDER BY m.left_at DESC
+        LIMIT ?
+      `
+      )
+      .all(`-${days} days`, limit);
+
+    return enrichLeaversTrust(rows);
+  }
+
   function getAmbassadorPostsByChannel(channelId, days = 30, ambassadorLimit = 20, postsPerAmbassador = 5) {
     const ambassadors = db
       .prepare(
@@ -768,6 +1065,7 @@ function createQueries(db) {
   return {
     trackMemberJoin,
     trackMemberLeave,
+    trackMemberProfile,
     trackMessage,
     syncChannels,
     syncActiveMembers,
@@ -793,6 +1091,8 @@ function createQueries(db) {
     getAmbassadorInvitees,
     getAmbassadorPostsByChannel,
     getMemberGrowth,
+    getRecentLeavers,
+    getLeaversByDayDetails,
   };
 }
 

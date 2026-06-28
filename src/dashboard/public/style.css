@@ -191,6 +191,124 @@ body {
   color: var(--muted);
 }
 
+#leavers-wrap {
+  margin-top: 8px;
+}
+
+#leave-explorer-wrap {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.leave-explorer-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+
+.leave-explorer-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.leave-explorer-controls select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(11, 18, 32, 0.7);
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.leave-day-details {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(23, 35, 61, 0.6);
+  padding: 8px 10px;
+}
+
+.leave-day-details summary {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text);
+}
+
+.leave-day-content {
+  margin-top: 10px;
+}
+
+.leave-explorer-chart-wrap {
+  min-height: 240px;
+  margin-bottom: 10px;
+}
+
+.leaves-daily-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 240px);
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+
+.leaves-daily-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.leaves-daily-controls select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(11, 18, 32, 0.7);
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.leaves-daily-chart-wrap {
+  min-height: 250px;
+}
+
+#leaves-daily-list {
+  margin-top: 10px;
+}
+
+.leavers-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+
+.leavers-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.leavers-controls select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(11, 18, 32, 0.7);
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.leavers-list .invitee-meta {
+  row-gap: 6px;
+}
+
 #channel-ranking-list li {
   margin: 8px 0;
 }
@@ -356,6 +474,11 @@ body {
   color: #ffb393;
 }
 
+.badge.warn {
+  background: rgba(255, 208, 138, 0.2);
+  color: #ffd08a;
+}
+
 .site-footer {
   margin-top: 18px;
   padding: 10px 2px 2px;
@@ -375,6 +498,18 @@ body {
   }
 
   .invitee-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .leavers-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .leave-explorer-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .leaves-daily-controls {
     grid-template-columns: 1fr;
   }
 }

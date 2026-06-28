@@ -46,6 +46,7 @@ async function onGuildMemberAdd(member, context) {
   queries.trackMemberJoin({
     userId: member.id,
     username: member.user.tag,
+    avatarUrl: member.user.avatarURL() || null,
     inviterId,
     joinedAt: new Date().toISOString(),
     isBot: member.user.bot,

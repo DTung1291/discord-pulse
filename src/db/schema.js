@@ -17,10 +17,20 @@ function initDatabase(dbPath) {
     CREATE TABLE IF NOT EXISTS members (
       user_id TEXT PRIMARY KEY,
       username TEXT NOT NULL,
+      avatar_url TEXT,
       joined_at TEXT,
       left_at TEXT,
       inviter_id TEXT,
       is_bot INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS member_profile_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      username TEXT NOT NULL,
+      avatar_url TEXT,
+      captured_at TEXT NOT NULL,
+      source TEXT
     );
 
     CREATE TABLE IF NOT EXISTS join_events (
@@ -95,12 +105,18 @@ function initDatabase(dbPath) {
     CREATE INDEX IF NOT EXISTS idx_ambassador_posts_channel_posted_at ON ambassador_posts(channel_id, posted_at);
     CREATE INDEX IF NOT EXISTS idx_ambassador_posts_ambassador_id ON ambassador_posts(ambassador_id);
     CREATE INDEX IF NOT EXISTS idx_invite_tracker_sync_synced_at ON invite_tracker_sync(synced_at);
+    CREATE INDEX IF NOT EXISTS idx_member_profile_history_user_time ON member_profile_history(user_id, captured_at);
   `);
 
   const memberColumns = db.prepare("PRAGMA table_info(members)").all();
   const hasIsBotColumn = memberColumns.some((col) => col.name === "is_bot");
   if (!hasIsBotColumn) {
     db.exec("ALTER TABLE members ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0;");
+  }
+
+  const hasAvatarUrlColumn = memberColumns.some((col) => col.name === "avatar_url");
+  if (!hasAvatarUrlColumn) {
+    db.exec("ALTER TABLE members ADD COLUMN avatar_url TEXT;");
   }
 
   return db;

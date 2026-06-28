@@ -4,6 +4,8 @@ const {
   buildGhostMembersContent,
   buildAmbassadorPerformanceContent,
   buildAmbassadorInviteesContent,
+  buildRecentLeaversContent,
+  buildLeavesByDayContent,
 } = require("../../scheduler/reports");
 
 function isInConfiguredGuild(interaction, guildId) {
@@ -90,6 +92,21 @@ async function onInteractionCreate(interaction, context) {
     const days = interaction.options.getInteger("days") || 30;
     const limit = interaction.options.getInteger("limit") || 20;
     const content = buildAmbassadorInviteesContent(queries, ambassadorId, days, limit);
+    await interaction.editReply({ content });
+    return;
+  }
+
+  if (interaction.commandName === "pulse-leavers") {
+    const days = interaction.options.getInteger("days") || 7;
+    const limit = interaction.options.getInteger("limit") || 20;
+    const content = buildRecentLeaversContent(queries, days, limit);
+    await interaction.editReply({ content });
+    return;
+  }
+
+  if (interaction.commandName === "pulse-leaves-daily") {
+    const days = interaction.options.getInteger("days") || 14;
+    const content = buildLeavesByDayContent(queries, days);
     await interaction.editReply({ content });
     return;
   }

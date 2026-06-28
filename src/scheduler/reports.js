@@ -130,6 +130,45 @@ function buildAmbassadorInviteesContent(queries, ambassadorId, days = 30, limit 
   ].join("\n");
 }
 
+function buildRecentLeaversContent(queries, days = 7, limit = 20) {
+  const rows = queries.getRecentLeavers(days, limit);
+  if (!rows.length) {
+    return `**Recent Leavers (${days}d)**\nNo leave events in this period.`;
+  }
+
+  return [
+    `**Recent Leavers (${days}d)**`,
+    rows
+      .map((row, idx) => {
+        const activityTag = Number(row.messages_7d_before_leave || 0) === 0 ? "LOW-ACTIVITY" : "ACTIVE";
+        const inviterPart = row.inviter_id ? `inviter: <@${row.inviter_id}>` : "inviter: unknown";
+        const avatarPart = Number(row.has_avatar || 0) === 1 ? "avatar: yes" : "avatar: no";
+        const idNamePart = Number(row.username_equals_user_id || 0) === 1 ? "name=id" : "name!=id";
+        const suspiciousPart = Number(row.suspicious_username_pattern || 0) === 1 ? "pattern: suspicious" : "pattern: normal";
+        return `${idx + 1}. <@${row.user_id}> - risk:${String(row.trust_risk_level || "unknown").toUpperCase()} (${row.trust_score}) - ${activityTag} - ${avatarPart} - ${idNamePart} - ${suspiciousPart} - username changes: ${row.username_change_count} - similar-group: ${row.similar_name_group_size} - stay ${Math.max(Number(row.stay_days || 0), 0)}d - total msgs ${row.total_messages} - 7d msgs ${row.messages_7d_before_leave} - ${inviterPart} - left: ${row.left_at}`;
+      })
+      .join("\n"),
+  ].join("\n");
+}
+
+function buildLeavesByDayContent(queries, days = 14) {
+  const growth = queries.getMemberGrowth(days);
+  const leaves = Array.isArray(growth?.leaves) ? growth.leaves : [];
+
+  if (!leaves.length) {
+    return `**Leaves By Day (${days}d)**\nNo leave events in this period.`;
+  }
+
+  const rows = [...leaves].sort((a, b) => String(b.day).localeCompare(String(a.day)));
+  const total = rows.reduce((sum, row) => sum + Number(row.count || 0), 0);
+
+  return [
+    `**Leaves By Day (${days}d)**`,
+    `Total leaves: ${total}`,
+    rows.map((row) => `- ${row.day}: ${row.count}`).join("\n"),
+  ].join("\n");
+}
+
 async function postDailyReport({ client, queries, reportChannelId }) {
   if (!reportChannelId) {
     return;
@@ -189,4 +228,6 @@ module.exports = {
   buildGhostMembersContent,
   buildAmbassadorPerformanceContent,
   buildAmbassadorInviteesContent,
+  buildRecentLeaversContent,
+  buildLeavesByDayContent,
 };

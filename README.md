@@ -8,6 +8,7 @@ A self-hosted Discord server analytics bot with a real-time dashboard and schedu
 - **Message Activity** — heatmap by hour/day, message volume over time
 - **Channel Popularity** — rank channels by activity, voice channel time tracking
 - **User Engagement** — identify active members vs ghosts, per-user stats over 7/30 days
+- **Leave Intelligence** — list recent leavers with trust signals (avatar, username pattern, username-change count, inviter, activity)
 - **Discord Reports** — automated embed reports posted to a designated channel via cron
 - **Ambassador Invite Tracking** — auto-provision unique ambassador invites and track weekly ambassador performance
 - **Ambassador Post Tracking** — capture ambassador posts in a dedicated channel and show per-ambassador post history on dashboard
@@ -116,6 +117,7 @@ Dashboard includes:
 - Message volume and member growth charts
 - Channel rankings
 - Invite leaderboard (current snapshot)
+- Leave Explorer (grouped by day, click each day to expand leaver details with trust signals)
 - Ambassador performance (7-day leaderboard)
 - Ambassador performance + recent ambassador posts in channel `1518242290982719698` (integrated in one section)
 
@@ -136,6 +138,8 @@ The bot registers guild slash commands automatically on startup:
 - `/pulse-ghosts [days]` — inactive members list
 - `/pulse-ambassadors [days]` — ambassador invite performance leaderboard
 - `/pulse-ambassador-users [member] [days] [limit]` — list users invited by an ambassador with ghost/active status
+- `/pulse-leavers [days] [limit]` — list members who left recently with trust signals (risk score, avatar, name/id match, username-change count, inviter)
+- `/pulse-leaves-daily [days]` — show leave counts grouped by day
 
 ## Security Note
 
