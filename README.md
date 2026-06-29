@@ -107,6 +107,8 @@ npm run bot
 npm run dashboard
 ```
 
+`npm start` now auto-cleans port `3000` before boot, so you do not need to manually kill previous dashboard processes.
+
 ## Dashboard
 
 Open `http://localhost:3000` in your browser after starting the app.

@@ -24,4 +24,5 @@ pnpm-debug.log*
 
 # Exported reports/data
 exports/*.csv
+exports/*.pdf
 !exports/.gitkeep

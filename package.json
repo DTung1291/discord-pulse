@@ -5,6 +5,7 @@
   "main": "src/index.js",
   "type": "commonjs",
   "scripts": {
+    "prestart": "(lsof -ti tcp:3000 | xargs kill) >/dev/null 2>&1 || true",
     "start": "node src/index.js",
     "bot": "node src/bot/index.js",
     "dashboard": "node src/dashboard/server.js"
