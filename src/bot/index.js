@@ -481,18 +481,27 @@ async function startBot(options = {}) {
         return;
       }
 
-      if (interaction.deferred || interaction.replied) {
-        await interaction.followUp({
-          content: "Something went wrong while processing this command.",
-          ephemeral: true,
-        });
-        return;
-      }
+      try {
+        if (interaction.deferred || interaction.replied) {
+          await interaction.followUp({
+            content: "Something went wrong while processing this command.",
+            flags: 64,
+          });
+          return;
+        }
 
-      await interaction.reply({
-        content: "Something went wrong while processing this command.",
-        ephemeral: true,
-      });
+        await interaction.reply({
+          content: "Something went wrong while processing this command.",
+          flags: 64,
+        });
+      } catch (replyError) {
+        if (replyError && Number(replyError.code) === 40060) {
+          // Interaction was already acknowledged elsewhere; avoid crashing the bot.
+          return;
+        }
+
+        console.error("Failed to send interaction error response:", replyError);
+      }
     }
   });
 

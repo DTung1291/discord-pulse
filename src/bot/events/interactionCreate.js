@@ -38,13 +38,13 @@ async function onInteractionCreate(interaction, context) {
   if (!isInConfiguredGuild(interaction, guildId)) {
     await interaction.reply({
       content: "This bot is restricted to another guild.",
-      ephemeral: true,
+      flags: 64,
     });
     return;
   }
 
   // Acknowledge quickly to avoid Discord's 3-second timeout for slower commands.
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: 64 });
 
   if (interaction.commandName === "pulse-summary") {
     const days = interaction.options.getInteger("days") || 7;
