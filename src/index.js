@@ -6,12 +6,25 @@ const { startBot } = require("./bot/index");
 const { startDashboard } = require("./dashboard/server");
 const { startReportScheduler } = require("./scheduler/reports");
 
+function resolveDashboardPort() {
+  const candidates = [process.env.PORT, process.env.DASHBOARD_PORT, "3000"];
+
+  for (const raw of candidates) {
+    const port = Number(raw);
+    if (Number.isFinite(port) && port > 0) {
+      return Math.floor(port);
+    }
+  }
+
+  return 3000;
+}
+
 async function main() {
   const db = initDatabase(process.env.DB_PATH);
   const queries = createQueries(db);
 
   startDashboard({
-    port: Number(process.env.DASHBOARD_PORT || 3000),
+    port: resolveDashboardPort(),
     queries,
   });
 
