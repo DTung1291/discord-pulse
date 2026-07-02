@@ -335,8 +335,9 @@ function mapAmbassadorInviteById(invites) {
   const map = new Map();
   for (const invite of invites || []) {
     if (!map.has(invite.ambassador_id)) {
-      map.set(invite.ambassador_id, invite.code);
+      map.set(invite.ambassador_id, []);
     }
+    map.get(invite.ambassador_id).push(invite.code);
   }
   return map;
 }
@@ -345,18 +346,18 @@ function buildAmbassadorCompareRows(rows, ambassadorPostsMap = new Map()) {
   const normalized = (rows || []).map((row) => {
     const postGroup = ambassadorPostsMap.get(row.ambassador_id) || null;
     const posts = Number(postGroup ? postGroup.post_count : 0);
-    const joins = Number(row.invited_count || 0);
-    const joinsPerPost = posts > 0 ? Number((joins / posts).toFixed(2)) : 0;
+    const activeCurrent = Number(row.current_count || 0);
+    const activePerPost = posts > 0 ? Number((activeCurrent / posts).toFixed(2)) : 0;
     return {
       id: row.ambassador_id,
       name: row.ambassador_name || `User ${row.ambassador_id}`,
-      joins,
+      activeCurrent,
       posts,
-      joinsPerPost,
+      activePerPost,
     };
   });
 
-  return normalized.sort((a, b) => b.joins - a.joins);
+  return normalized.sort((a, b) => b.activeCurrent - a.activeCurrent);
 }
 
 function renderAmbassadorCompareChart(rows, ambassadorPostsMap = new Map()) {
@@ -385,8 +386,8 @@ function renderAmbassadorCompareChart(rows, ambassadorPostsMap = new Map()) {
       datasets: [
         {
           type: "bar",
-          label: "Joins (7d)",
-          data: dataRows.map((row) => row.joins),
+          label: "Active Invites (current)",
+          data: dataRows.map((row) => row.activeCurrent),
           backgroundColor: "rgba(46, 197, 182, 0.75)",
           borderRadius: 6,
           yAxisID: "y",
@@ -401,8 +402,8 @@ function renderAmbassadorCompareChart(rows, ambassadorPostsMap = new Map()) {
         },
         {
           type: "line",
-          label: "Joins/Post",
-          data: dataRows.map((row) => row.joinsPerPost),
+          label: "Active/Post",
+          data: dataRows.map((row) => row.activePerPost),
           borderColor: "#79b8ff",
           backgroundColor: "rgba(121, 184, 255, 0.2)",
           tension: 0.2,
@@ -427,7 +428,7 @@ function renderAmbassadorCompareChart(rows, ambassadorPostsMap = new Map()) {
         },
         y1: {
           position: "right",
-          title: { display: true, text: "Joins/Post", color: "#a5b1ca" },
+          title: { display: true, text: "Active/Post", color: "#a5b1ca" },
           ticks: { color: "#a5b1ca" },
           grid: { drawOnChartArea: false },
           beginAtZero: true,
@@ -441,8 +442,7 @@ function renderInviteeList(listWrap, rows, statusFilter = "all", query = "") {
   const normalizedQuery = (query || "").trim().toLowerCase();
 
   const filteredRows = rows.filter((row) => {
-    const isActive = Number(row.total_messages || 0) > 0;
-    const status = isActive ? "active" : "ghost";
+    const status = row.still_in_server ? "in-server" : "left";
 
     if (statusFilter !== "all" && status !== statusFilter) {
       return false;
@@ -462,49 +462,102 @@ function renderInviteeList(listWrap, rows, statusFilter = "all", query = "") {
     return;
   }
 
+  const sourceLabelMap = {
+    invite_cu: "Invite cũ",
+    invite_code_moi: "Invite qua code mới",
+    invite_khong_xac_dinh: "Không xác định",
+  };
+
+  const bySource = {
+    invite_cu: filteredRows.filter((row) => row.invite_source_type === "invite_cu"),
+    invite_code_moi: filteredRows.filter((row) => row.invite_source_type === "invite_code_moi"),
+    invite_khong_xac_dinh: filteredRows.filter(
+      (row) => !row.invite_source_type || row.invite_source_type === "invite_khong_xac_dinh"
+    ),
+  };
+
+  function renderSourceTable(title, sourceKey, sourceRows) {
+    if (!sourceRows.length) {
+      return `
+        <section class="invite-source-group">
+          <h5>${title} (0)</h5>
+          <div class="invitee-empty">No users in this group.</div>
+        </section>
+      `;
+    }
+
+    return `
+      <section class="invite-source-group">
+        <h5>${title} (${sourceRows.length})</h5>
+        <div class="invitee-table-wrap">
+          <table class="invitee-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Membership</th>
+                <th>Activity</th>
+                <th>Messages</th>
+                <th>Joined</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sourceRows
+                .map((row) => {
+                  const username = escapeHtml(row.username || row.user_id);
+                  const userId = escapeHtml(row.user_id);
+                  const status = Number(row.total_messages || 0) > 0 ? "ACTIVE" : "GHOST";
+                  const statusClass = status === "ACTIVE" ? "active" : "ghost";
+                  const membership = row.still_in_server ? "in-server" : "left";
+                  const joinedAt = row.joined_at ? new Date(row.joined_at).toLocaleString() : "-";
+                  const sourceBadge = sourceKey === "invite_code_moi" ? "active" : sourceKey === "invite_cu" ? "warn" : "ghost";
+
+                  return `
+                    <tr>
+                      <td>
+                        <div class="invitee-cell-user">${username}</div>
+                        <div class="invitee-cell-sub">${userId}</div>
+                      </td>
+                      <td>${membership}</td>
+                      <td>
+                        <span class="badge ${statusClass}">${status}</span>
+                        <span class="badge ${sourceBadge}">${escapeHtml(sourceLabelMap[sourceKey] || sourceLabelMap.invite_khong_xac_dinh)}</span>
+                      </td>
+                      <td>${row.total_messages || 0}</td>
+                      <td>${escapeHtml(joinedAt)}</td>
+                    </tr>
+                  `;
+                })
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    `;
+  }
+
   listWrap.innerHTML = `
-    <ul class="invitee-list">
-      ${filteredRows
-        .map((row) => {
-          const username = escapeHtml(row.username || row.user_id);
-          const userId = escapeHtml(row.user_id);
-          const status = Number(row.total_messages || 0) > 0 ? "ACTIVE" : "GHOST";
-          const statusClass = status === "ACTIVE" ? "active" : "ghost";
-          const membership = row.still_in_server ? "in-server" : "left";
-          const joinedAt = row.joined_at ? new Date(row.joined_at).toLocaleString() : "-";
-          return `
-            <li>
-              <div class="invitee-header">
-                <span>${username} (${userId})</span>
-                <span class="badge ${statusClass}">${status}</span>
-              </div>
-              <div class="invitee-meta">
-                <span>${membership}</span>
-                <span>messages: ${row.total_messages || 0}</span>
-                <span>joined: ${escapeHtml(joinedAt)}</span>
-              </div>
-            </li>
-          `;
-        })
-        .join("")}
-    </ul>
+    <div class="invite-source-sections">
+      ${renderSourceTable(sourceLabelMap.invite_code_moi, "invite_code_moi", bySource.invite_code_moi)}
+      ${renderSourceTable(sourceLabelMap.invite_cu, "invite_cu", bySource.invite_cu)}
+      ${renderSourceTable(sourceLabelMap.invite_khong_xac_dinh, "invite_khong_xac_dinh", bySource.invite_khong_xac_dinh)}
+    </div>
   `;
 }
 
 async function loadAmbassadorInvitees(ambassadorId, container) {
   try {
     const rows = await getJson(
-      `/api/ambassador-invitees?ambassadorId=${encodeURIComponent(ambassadorId)}&days=90&limit=30`
+      `/api/ambassador-invitees?ambassadorId=${encodeURIComponent(ambassadorId)}&days=0&limit=2000`
     );
 
     container.innerHTML = `
       <div class="invitee-controls">
         <label>
-          Status
+          Membership
           <select class="invitee-filter-status">
+            <option value="in-server" selected>In server</option>
+            <option value="left">Left</option>
             <option value="all">All</option>
-            <option value="ghost">Ghost</option>
-            <option value="active">Active</option>
           </select>
         </label>
         <label>
@@ -562,16 +615,20 @@ function renderAmbassadorPerformance(rows, ambassadorPostsMap = new Map(), ambas
       const name = escapeHtml(row.ambassador_name || `User ${row.ambassador_id}`);
       const ambassadorId = escapeHtml(row.ambassador_id);
       const postGroup = ambassadorPostsMap.get(row.ambassador_id) || null;
-      const inviteCode = ambassadorInviteMap.get(row.ambassador_id);
-      const inviteLink = inviteCode ? `https://discord.gg/${encodeURIComponent(inviteCode)}` : null;
+      const inviteCodes = ambassadorInviteMap.get(row.ambassador_id) || [];
       const postCount = Number(postGroup ? postGroup.post_count : 0);
       const postRows = Array.isArray(postGroup?.posts) ? postGroup.posts : [];
       const regularCount = Number(row.regular_count || 0);
       const currentCount = Number(row.current_count || 0);
       const leftCount = Number(row.left_count || 0);
       const fakeCount = Number(row.fake_count || 0);
-      const inviteHtml = inviteLink
-        ? `<div class="invitee-meta"><span>invite: <a href="${inviteLink}" target="_blank" rel="noreferrer noopener">${escapeHtml(inviteCode)}</a></span></div>`
+      const inviteHtml = inviteCodes.length
+        ? `<div class="invitee-meta"><span>invite codes: ${inviteCodes
+            .map((code) => {
+              const link = `https://discord.gg/${encodeURIComponent(code)}`;
+              return `<a href="${link}" target="_blank" rel="noreferrer noopener">${escapeHtml(code)}</a>`;
+            })
+            .join(" | ")}</span></div>`
         : '<div class="invitee-meta"><span>invite: none</span></div>';
       const breakdownHtml = `
         <div class="invitee-meta">
@@ -583,35 +640,42 @@ function renderAmbassadorPerformance(rows, ambassadorPostsMap = new Map(), ambas
       `;
       const postHtml = postRows.length
         ? `
-            <ul class="invitee-list">
-              ${postRows
-                .map((post) => {
-                  const postedAt = post.posted_at ? new Date(post.posted_at).toLocaleString() : "-";
-                  const rawContent = (post.content || "").trim();
-                  const preview = rawContent.length > 180 ? `${rawContent.slice(0, 180)}...` : rawContent;
-                  return `
-                    <li>
-                      <div class="invitee-header">
-                        <span>${escapeHtml(postedAt)}</span>
-                        <span class="badge active">POST</span>
-                      </div>
-                      <div class="invitee-meta">
-                        <span>${escapeHtml(preview || "(no text content)")}</span>
-                      </div>
-                    </li>
-                  `;
-                })
-                .join("")}
-            </ul>
+            <div class="invitee-table-wrap">
+              <table class="invitee-table posts-table">
+                <thead>
+                  <tr>
+                    <th>Posted At</th>
+                    <th>Type</th>
+                    <th>Content</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${postRows
+                    .map((post) => {
+                      const postedAt = post.posted_at ? new Date(post.posted_at).toLocaleString() : "-";
+                      const rawContent = (post.content || "").trim();
+                      const preview = rawContent.length > 220 ? `${rawContent.slice(0, 220)}...` : rawContent;
+                      return `
+                        <tr>
+                          <td>${escapeHtml(postedAt)}</td>
+                          <td><span class="badge active">POST</span></td>
+                          <td>${escapeHtml(preview || "(no text content)")}</td>
+                        </tr>
+                      `;
+                    })
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
           `
         : '<div class="invitee-empty">No posts in tracked channel.</div>';
 
       const summaryMetrics = `
         <div class="ambassador-summary-metrics">
-          <span class="metric-chip joins">joins: ${row.invited_count}</span>
+          <span class="metric-chip current">active_current: ${currentCount}</span>
+          <span class="metric-chip joins">joins_7d_active: ${row.invited_count}</span>
           <span class="metric-chip posts">posts: ${postCount}</span>
-          <span class="metric-chip current">current: ${currentCount}</span>
-          <span class="metric-chip regular">regular: ${regularCount}</span>
+          <span class="metric-chip regular">regular_total: ${regularCount}</span>
           <span class="metric-chip left">left: ${leftCount}</span>
           <span class="metric-chip">fake: ${fakeCount}</span>
         </div>
@@ -629,12 +693,18 @@ function renderAmbassadorPerformance(rows, ambassadorPostsMap = new Map(), ambas
             </summary>
             ${inviteHtml}
             ${breakdownHtml}
-            <div class="invitee-container">
-              <div class="invitee-loading">Loading invitees...</div>
-            </div>
-            <div class="invitee-container">
-              ${postHtml}
-            </div>
+            <section class="ambassador-detail-block invitees-block">
+              <h4>Invitees</h4>
+              <div class="invitee-container invitees-container">
+                <div class="invitee-loading">Loading invitees...</div>
+              </div>
+            </section>
+            <section class="ambassador-detail-block posts-block">
+              <h4>Posts</h4>
+              <div class="invitee-container posts-container">
+                ${postHtml}
+              </div>
+            </section>
           </details>
         </li>
       `;
@@ -653,7 +723,7 @@ function renderAmbassadorPerformance(rows, ambassadorPostsMap = new Map(), ambas
         return;
       }
 
-      const container = node.querySelector(".invitee-container");
+      const container = node.querySelector(".invitees-container");
       if (!container || container.dataset.loaded === "1") {
         return;
       }

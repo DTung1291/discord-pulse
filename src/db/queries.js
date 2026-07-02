@@ -600,21 +600,28 @@ function createQueries(db) {
           SELECT
             ai.ambassador_id,
             MAX(ai.ambassador_name) AS ambassador_name,
-            COUNT(je.id) AS invited_count
+            COUNT(
+              DISTINCT CASE
+                WHEN COALESCE(jm.is_bot, 0) = 0 AND jm.left_at IS NULL THEN je.user_id
+                ELSE NULL
+              END
+            ) AS invited_count
           FROM ambassador_invites ai
           LEFT JOIN join_events je
             ON je.inviter_id = ai.ambassador_id
            AND je.joined_at >= datetime('now', ?)
+          LEFT JOIN members jm ON jm.user_id = je.user_id
           WHERE ai.active = 1
           GROUP BY ai.ambassador_id
         ),
         snapshot AS (
           SELECT
-            inviter_id AS ambassador_id,
+            ai.ambassador_id,
             COALESCE(SUM(uses), 0) AS regular_count
-          FROM invite_snapshots
-          WHERE inviter_id IS NOT NULL
-          GROUP BY inviter_id
+          FROM ambassador_invites ai
+          LEFT JOIN invite_snapshots s ON s.code = ai.code
+          WHERE ai.active = 1
+          GROUP BY ai.ambassador_id
         ),
         member_map AS (
           SELECT
@@ -641,15 +648,15 @@ function createQueries(db) {
           p.ambassador_name,
           p.invited_count,
           COALESCE(ts.regular_count, s.regular_count, 0) AS regular_count,
-          COALESCE(ts.current_count, m.current_count, 0) AS current_count,
-          COALESCE(ts.left_count, m.left_count, 0) AS left_count,
+          COALESCE(m.current_count, 0) AS current_count,
+          COALESCE(m.left_count, 0) AS left_count,
           COALESCE(ts.fake_count, 0) AS fake_count,
           COALESCE(ts.bonus_count, 0) AS bonus_count,
           MAX(
             COALESCE(ts.regular_count, s.regular_count, 0) -
               (
-                COALESCE(ts.current_count, m.current_count, 0) +
-                COALESCE(ts.left_count, m.left_count, 0) +
+                COALESCE(m.current_count, 0) +
+                COALESCE(m.left_count, 0) +
                 COALESCE(ts.fake_count, 0) +
                 COALESCE(ts.bonus_count, 0)
               ),
@@ -692,8 +699,10 @@ function createQueries(db) {
       .prepare(
         `
         SELECT COALESCE(SUM(s.uses), 0) AS regular_count
-        FROM invite_snapshots s
-        WHERE s.inviter_id = ?
+        FROM ambassador_invites ai
+        LEFT JOIN invite_snapshots s ON s.code = ai.code
+        WHERE ai.ambassador_id = ?
+          AND ai.active = 1
       `
       )
       .get(ambassadorId);
@@ -735,26 +744,47 @@ function createQueries(db) {
   }
 
   function getAmbassadorInvitees(ambassadorId, days = 30, limit = 20) {
+    const hasDaysFilter = Number(days) > 0;
     return db
       .prepare(
         `
+        WITH invite_window AS (
+          SELECT
+            ambassador_id,
+            MIN(created_at) AS first_invite_created_at,
+            MAX(created_at) AS latest_invite_created_at,
+            COUNT(*) AS invite_code_count,
+            GROUP_CONCAT(code, '|') AS invite_codes
+          FROM ambassador_invites
+          WHERE active = 1
+          GROUP BY ambassador_id
+        )
         SELECT
-          je.user_id,
-          COALESCE(m.username, je.user_id) AS username,
-          je.joined_at,
+          m.user_id,
+          COALESCE(m.username, m.user_id) AS username,
+          m.joined_at,
           CASE WHEN m.left_at IS NULL THEN 1 ELSE 0 END AS still_in_server,
-          COALESCE((SELECT COUNT(*) FROM message_events me WHERE me.user_id = je.user_id), 0) AS total_messages,
-          COALESCE((SELECT MAX(me.created_at) FROM message_events me WHERE me.user_id = je.user_id), '') AS last_message_at
-        FROM join_events je
-        LEFT JOIN members m ON m.user_id = je.user_id
-        WHERE je.inviter_id = ?
-          AND je.joined_at >= datetime('now', ?)
+          COALESCE((SELECT COUNT(*) FROM message_events me WHERE me.user_id = m.user_id), 0) AS total_messages,
+          COALESCE((SELECT MAX(me.created_at) FROM message_events me WHERE me.user_id = m.user_id), '') AS last_message_at,
+          iw.invite_codes,
+          iw.first_invite_created_at,
+          iw.latest_invite_created_at,
+          iw.invite_code_count,
+          CASE
+            WHEN iw.first_invite_created_at IS NULL THEN 'invite_khong_xac_dinh'
+            WHEN iw.invite_code_count > 1 AND m.joined_at < iw.latest_invite_created_at THEN 'invite_cu'
+            ELSE 'invite_code_moi'
+          END AS invite_source_type
+        FROM members m
+        LEFT JOIN invite_window iw ON iw.ambassador_id = m.inviter_id
+        WHERE m.inviter_id = ?
           AND COALESCE(m.is_bot, 0) = 0
-        ORDER BY je.joined_at DESC
+          AND (? = 0 OR m.joined_at >= datetime('now', ?))
+        ORDER BY m.joined_at DESC
         LIMIT ?
       `
       )
-      .all(ambassadorId, `-${days} days`, limit);
+      .all(ambassadorId, hasDaysFilter ? 1 : 0, `-${days} days`, limit);
   }
 
   function getMemberGrowth(days = 30) {

@@ -196,6 +196,15 @@ async function buildInviteCache(guild, invitesCache, queries) {
   }
 }
 
+async function buildVanityCache(guild, vanityCache) {
+  try {
+    const vanity = await guild.fetchVanityData();
+    vanityCache.set(guild.id, Number(vanity?.uses || 0));
+  } catch (_error) {
+    // Guild may not have vanity URL or bot may not be allowed to fetch vanity data.
+  }
+}
+
 async function syncGuildMembers(guild, queries) {
   try {
     const members = await guild.members.fetch();
@@ -374,6 +383,7 @@ async function startBot(options = {}) {
   const db = options.db || initDatabase(process.env.DB_PATH);
   const queries = options.queries || createQueries(db);
   const invitesCache = new Map();
+  const vanityCache = new Map();
 
   if (!token) {
     throw new Error("DISCORD_TOKEN is required to start the bot");
@@ -394,6 +404,7 @@ async function startBot(options = {}) {
     queries,
     guildId,
     invitesCache,
+    vanityCache,
     adminRoleIds: parseCsvIds(process.env.ADMIN_ROLE_IDS),
     ambassadorPostChannelId: process.env.AMBASSADOR_POST_CHANNEL_ID || "1518242290982719698",
   };
@@ -412,6 +423,7 @@ async function startBot(options = {}) {
     if (guild) {
       await syncGuildMembers(guild, queries);
       await syncGuildChannels(guild, queries);
+      await buildVanityCache(guild, vanityCache);
       await buildInviteCache(guild, invitesCache, queries);
       await provisionAmbassadorInvites(
         guild,
@@ -434,6 +446,22 @@ async function startBot(options = {}) {
 
   client.on("guildMemberAdd", async (member) => {
     await onGuildMemberAdd(member, context);
+  });
+
+  client.on("inviteCreate", async (invite) => {
+    if (!invite?.guild) {
+      return;
+    }
+
+    await buildInviteCache(invite.guild, invitesCache, queries);
+  });
+
+  client.on("inviteDelete", async (invite) => {
+    if (!invite?.guild) {
+      return;
+    }
+
+    await buildInviteCache(invite.guild, invitesCache, queries);
   });
 
   client.on("guildMemberRemove", (member) => {

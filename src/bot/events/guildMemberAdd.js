@@ -1,19 +1,33 @@
 async function onGuildMemberAdd(member, context) {
-  const { invitesCache, queries } = context;
+  const { invitesCache, vanityCache, queries } = context;
   let inviterId = null;
   let usedInviteCode = null;
+  const maxAttempts = 3;
+  const retryDelayMs = 1500;
+
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   try {
-    const newInvites = await member.guild.invites.fetch();
     const oldInvites = invitesCache.get(member.guild.id) || new Map();
+    let newInvites = null;
 
-    for (const invite of newInvites.values()) {
-      const prevUses = oldInvites.get(invite.code) || 0;
-      if ((invite.uses || 0) > prevUses) {
-        usedInviteCode = invite.code;
-        inviterId = invite.inviter ? invite.inviter.id : null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      newInvites = await member.guild.invites.fetch();
+
+      for (const invite of newInvites.values()) {
+        const prevUses = oldInvites.get(invite.code) || 0;
+        if ((invite.uses || 0) > prevUses) {
+          usedInviteCode = invite.code;
+          inviterId = invite.inviter ? invite.inviter.id : null;
+          break;
+        }
+      }
+
+      if (usedInviteCode || attempt === maxAttempts) {
         break;
       }
+
+      await delay(retryDelayMs);
     }
 
     if (usedInviteCode) {
@@ -21,9 +35,33 @@ async function onGuildMemberAdd(member, context) {
       if (ambassador) {
         inviterId = ambassador.ambassador_id;
       }
+    } else {
+      try {
+        const vanity = await member.guild.fetchVanityData();
+        const prevVanityUses = vanityCache.get(member.guild.id) || 0;
+        const nextVanityUses = Number(vanity?.uses || 0);
+
+        if (nextVanityUses > prevVanityUses) {
+          usedInviteCode = vanity?.code || null;
+          if (usedInviteCode) {
+            const ambassador = queries.getAmbassadorByInviteCode(usedInviteCode);
+            if (ambassador) {
+              inviterId = ambassador.ambassador_id;
+            }
+          }
+        }
+
+        vanityCache.set(member.guild.id, nextVanityUses);
+      } catch (_error) {
+        // Vanity data is optional and may not be available.
+      }
     }
 
     const snapshot = [];
+    if (!newInvites) {
+      newInvites = await member.guild.invites.fetch();
+    }
+
     for (const invite of newInvites.values()) {
       snapshot.push({
         code: invite.code,

@@ -374,6 +374,20 @@ body {
   margin-top: 10px;
 }
 
+.ambassador-detail-block {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(11, 18, 32, 0.45);
+}
+
+.ambassador-detail-block h4 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+
 .invitee-controls {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -449,6 +463,59 @@ body {
 
 .invitee-meta a:hover {
   text-decoration: underline;
+}
+
+.invitee-table-wrap {
+  overflow-x: auto;
+}
+
+.invite-source-sections {
+  display: grid;
+  gap: 10px;
+}
+
+.invite-source-group {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(23, 35, 61, 0.35);
+}
+
+.invite-source-group h5 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.invitee-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.invitee-table th,
+.invitee-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+  color: var(--text);
+}
+
+.invitee-table th {
+  color: var(--muted);
+  font-weight: 600;
+  background: rgba(23, 35, 61, 0.45);
+}
+
+.invitee-cell-user {
+  font-weight: 600;
+}
+
+.invitee-cell-sub {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .breakdown-note {
