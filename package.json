@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "type": "commonjs",
   "scripts": {
-    "prestart": "(lsof -ti tcp:${PORT:-3000} | xargs kill) >/dev/null 2>&1 || true",
+    "prestart": "sh -c 'if command -v lsof >/dev/null 2>&1; then (lsof -ti tcp:${PORT:-3000} | xargs kill) >/dev/null 2>&1 || true; fi; if command -v pkill >/dev/null 2>&1; then pkill -f \"node src/index.js\" >/dev/null 2>&1 || true; fi'",
     "start": "node src/index.js",
     "bot": "node src/bot/index.js",
     "dashboard": "node src/dashboard/server.js"
