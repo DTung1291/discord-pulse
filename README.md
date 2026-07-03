@@ -11,6 +11,7 @@ A self-hosted Discord server analytics bot with a real-time dashboard and schedu
 - **Leave Intelligence** — list recent leavers with trust signals (avatar, username pattern, username-change count, inviter, activity)
 - **Discord Reports** — automated embed reports posted to a designated channel via cron
 - **Ambassador Invite Tracking** — auto-provision unique ambassador invites and track weekly ambassador performance
+- **Ambassador Invite History (Daily Snapshots)** — persist per-day invite uses for each ambassador code and compute daily deltas
 - **Ambassador Post Tracking** — capture ambassador posts in a dedicated channel and show per-ambassador post history on dashboard
 - **Slash Commands** — on-demand reports via `/pulse-summary`, `/pulse-daily`, `/pulse-weekly`, `/pulse-ghosts`, `/pulse-ambassadors`
 - **Web Dashboard** — realtime charts and filters via a local web UI
@@ -122,6 +123,24 @@ Dashboard includes:
 - Leave Explorer (grouped by day, click each day to expand leaver details with trust signals)
 - Ambassador performance (7-day leaderboard)
 - Ambassador performance + recent ambassador posts in channel `1518242290982719698` (integrated in one section)
+- Ambassador invite trend chart with filters (ambassador + day window)
+
+## API Endpoints (Dashboard)
+
+Common endpoints used by the web dashboard:
+
+- `GET /api/summary?days=7`
+- `GET /api/message-volume?days=30`
+- `GET /api/member-growth?days=30`
+- `GET /api/channel-rankings?days=7&limit=10`
+- `GET /api/invite-leaderboard?limit=10`
+- `GET /api/ambassador-performance?days=7&limit=20`
+- `GET /api/ambassador-invite-history?days=30`
+- `GET /api/ambassador-invite-history?ambassadorId=<id>&days=30`
+
+Notes:
+- `ambassador-invite-history` is backed by daily snapshots stored in `invite_snapshot_daily`.
+- Historical rows are available from the date this feature was deployed onward.
 
 ## Scheduled Reports
 
