@@ -100,6 +100,15 @@ function createQueries(db) {
       updated_at = excluded.updated_at
   `);
 
+  const upsertInviteSnapshotDailyStmt = db.prepare(`
+    INSERT INTO invite_snapshot_daily (code, snapshot_day, inviter_id, uses, updated_at)
+    VALUES (@code, @snapshot_day, @inviter_id, @uses, @updated_at)
+    ON CONFLICT(code, snapshot_day) DO UPDATE SET
+      inviter_id = excluded.inviter_id,
+      uses = excluded.uses,
+      updated_at = excluded.updated_at
+  `);
+
   const upsertAmbassadorInviteStmt = db.prepare(`
     INSERT INTO ambassador_invites (code, ambassador_id, ambassador_name, channel_id, active, created_at)
     VALUES (@code, @ambassador_id, @ambassador_name, @channel_id, 1, @created_at)
@@ -382,6 +391,7 @@ function createQueries(db) {
 
   function updateInviteSnapshot(invites) {
     const now = new Date().toISOString();
+    const snapshotDay = now.slice(0, 10);
     const tx = db.transaction((rows) => {
       for (const invite of rows) {
         upsertInviteSnapshotStmt.run({
@@ -390,10 +400,70 @@ function createQueries(db) {
           uses: invite.uses || 0,
           updated_at: now,
         });
+
+        upsertInviteSnapshotDailyStmt.run({
+          code: invite.code,
+          snapshot_day: snapshotDay,
+          inviter_id: invite.inviterId || null,
+          uses: invite.uses || 0,
+          updated_at: now,
+        });
       }
     });
 
     tx(invites);
+  }
+
+  function getAmbassadorInviteDailyHistory(ambassadorId = "", days = 30) {
+    const hasAmbassadorFilter = !!String(ambassadorId || "").trim();
+    const safeDays = Number(days) > 0 ? Number(days) : 30;
+
+    return db
+      .prepare(
+        `
+        WITH base AS (
+          SELECT ambassador_id, ambassador_name, code
+          FROM ambassador_invites
+          WHERE active = 1
+            AND (? = 0 OR ambassador_id = ?)
+        ),
+        daily AS (
+          SELECT
+            b.ambassador_id,
+            MAX(b.ambassador_name) AS ambassador_name,
+            d.snapshot_day,
+            SUM(d.uses) AS total_uses,
+            COUNT(DISTINCT b.code) AS code_count
+          FROM base b
+          JOIN invite_snapshot_daily d ON d.code = b.code
+          WHERE d.snapshot_day >= DATE('now', ?)
+          GROUP BY b.ambassador_id, d.snapshot_day
+        ),
+        ranked AS (
+          SELECT
+            ambassador_id,
+            ambassador_name,
+            snapshot_day,
+            total_uses,
+            code_count,
+            total_uses - LAG(total_uses) OVER (
+              PARTITION BY ambassador_id
+              ORDER BY snapshot_day
+            ) AS daily_delta
+          FROM daily
+        )
+        SELECT
+          ambassador_id,
+          ambassador_name,
+          snapshot_day,
+          total_uses,
+          COALESCE(daily_delta, total_uses) AS daily_delta,
+          code_count
+        FROM ranked
+        ORDER BY ambassador_name ASC, snapshot_day ASC
+      `
+      )
+      .all(hasAmbassadorFilter ? 1 : 0, ambassadorId || "", `-${safeDays} days`);
   }
 
   function upsertAmbassadorInvite({ code, ambassadorId, ambassadorName, channelId, createdAt }) {
@@ -617,9 +687,11 @@ function createQueries(db) {
         snapshot AS (
           SELECT
             ai.ambassador_id,
-            COALESCE(SUM(uses), 0) AS regular_count
+            COALESCE(SUM(s.uses), 0) AS regular_count
           FROM ambassador_invites ai
-          LEFT JOIN invite_snapshots s ON s.code = ai.code
+          LEFT JOIN invite_snapshots s
+            ON s.code = ai.code
+            OR s.inviter_id = ai.ambassador_id
           WHERE ai.active = 1
           GROUP BY ai.ambassador_id
         ),
@@ -648,15 +720,15 @@ function createQueries(db) {
           p.ambassador_name,
           p.invited_count,
           COALESCE(ts.regular_count, s.regular_count, 0) AS regular_count,
-          COALESCE(m.current_count, 0) AS current_count,
-          COALESCE(m.left_count, 0) AS left_count,
+          COALESCE(ts.current_count, m.current_count, 0) AS current_count,
+          COALESCE(ts.left_count, m.left_count, 0) AS left_count,
           COALESCE(ts.fake_count, 0) AS fake_count,
           COALESCE(ts.bonus_count, 0) AS bonus_count,
           MAX(
             COALESCE(ts.regular_count, s.regular_count, 0) -
               (
-                COALESCE(m.current_count, 0) +
-                COALESCE(m.left_count, 0) +
+                COALESCE(ts.current_count, m.current_count, 0) +
+                COALESCE(ts.left_count, m.left_count, 0) +
                 COALESCE(ts.fake_count, 0) +
                 COALESCE(ts.bonus_count, 0)
               ),
@@ -698,14 +770,19 @@ function createQueries(db) {
     const snapshotRegular = db
       .prepare(
         `
+        WITH ambassador_codes AS (
+          SELECT code
+          FROM ambassador_invites
+          WHERE ambassador_id = ?
+            AND active = 1
+        )
         SELECT COALESCE(SUM(s.uses), 0) AS regular_count
-        FROM ambassador_invites ai
-        LEFT JOIN invite_snapshots s ON s.code = ai.code
-        WHERE ai.ambassador_id = ?
-          AND ai.active = 1
+        FROM invite_snapshots s
+        WHERE s.inviter_id = ?
+           OR s.code IN (SELECT code FROM ambassador_codes)
       `
       )
-      .get(ambassadorId);
+      .get(ambassadorId, ambassadorId);
 
     const memberBased = db
       .prepare(
@@ -1116,6 +1193,7 @@ function createQueries(db) {
     getGhostMembers,
     getInviteLeaderboard,
     getInviteSnapshotLeaderboard,
+    getAmbassadorInviteDailyHistory,
     getAmbassadorPerformance,
     getAmbassadorInviteBreakdown,
     getAmbassadorInvitees,

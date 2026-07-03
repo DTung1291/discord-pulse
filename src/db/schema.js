@@ -66,6 +66,15 @@ function initDatabase(dbPath) {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS invite_snapshot_daily (
+      code TEXT NOT NULL,
+      snapshot_day TEXT NOT NULL,
+      inviter_id TEXT,
+      uses INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (code, snapshot_day)
+    );
+
     CREATE TABLE IF NOT EXISTS ambassador_invites (
       code TEXT PRIMARY KEY,
       ambassador_id TEXT NOT NULL,
@@ -106,6 +115,8 @@ function initDatabase(dbPath) {
     CREATE INDEX IF NOT EXISTS idx_ambassador_posts_ambassador_id ON ambassador_posts(ambassador_id);
     CREATE INDEX IF NOT EXISTS idx_invite_tracker_sync_synced_at ON invite_tracker_sync(synced_at);
     CREATE INDEX IF NOT EXISTS idx_member_profile_history_user_time ON member_profile_history(user_id, captured_at);
+    CREATE INDEX IF NOT EXISTS idx_invite_snapshot_daily_day ON invite_snapshot_daily(snapshot_day);
+    CREATE INDEX IF NOT EXISTS idx_invite_snapshot_daily_inviter ON invite_snapshot_daily(inviter_id);
   `);
 
   const memberColumns = db.prepare("PRAGMA table_info(members)").all();

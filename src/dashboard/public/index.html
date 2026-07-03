@@ -70,6 +70,29 @@
         <article class="panel full">
           <h2>Ambassador Performance (7 days)</h2>
           <p id="ambassador-count-label" class="panel-subnote">Showing -- ambassadors</p>
+          <div class="ambassador-trend-controls">
+            <label>
+              Ambassador
+              <select id="ambassador-trend-ambassador">
+                <option value="">All ambassadors</option>
+              </select>
+            </label>
+            <label>
+              Window
+              <select id="ambassador-trend-days">
+                <option value="7">Last 7 days</option>
+                <option value="14">Last 14 days</option>
+                <option value="30" selected>Last 30 days</option>
+                <option value="60">Last 60 days</option>
+              </select>
+            </label>
+          </div>
+          <div class="chart-wrap ambassador-trend-chart-wrap">
+            <canvas id="ambassadorInviteTrendChart"></canvas>
+          </div>
+          <p id="ambassador-trend-empty" class="chart-empty" hidden>
+            No invite trend data for this filter.
+          </p>
           <details class="sync-box">
             <summary>Sync from Invite Tracker (/invites)</summary>
             <form id="invite-tracker-sync-form" class="sync-form">
@@ -92,7 +115,7 @@
                 ></textarea>
               </label>
               <button id="sync-submit" type="submit">Sync now</button>
-              <p id="sync-status" class="sync-status">Paste /invites text rồi bấm Sync now.</p>
+              <p id="sync-status" class="sync-status">Paste /invites text, then click Sync now.</p>
             </form>
           </details>
           <div class="chart-wrap">

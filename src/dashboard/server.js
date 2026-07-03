@@ -56,6 +56,12 @@ function startDashboard(options = {}) {
   const queries = options.queries || createQueries(db);
 
   app.use(express.json());
+  app.use((req, res, next) => {
+    if (req.path === "/app.js" || req.path === "/style.css") {
+      res.setHeader("Cache-Control", "no-store");
+    }
+    next();
+  });
   app.use(express.static(path.join(__dirname, "public")));
 
   app.get("/api/summary", (req, res) => {
@@ -136,6 +142,12 @@ function startDashboard(options = {}) {
   app.get("/api/invite-leaderboard", (req, res) => {
     const limit = toInt(req.query.limit, 10);
     res.json(queries.getInviteSnapshotLeaderboard(limit));
+  });
+
+  app.get("/api/ambassador-invite-history", (req, res) => {
+    const days = toInt(req.query.days, 30);
+    const ambassadorId = (req.query.ambassadorId || "").toString().trim();
+    res.json(queries.getAmbassadorInviteDailyHistory(ambassadorId, days));
   });
 
   app.get("/api/ambassador-performance", (req, res) => {

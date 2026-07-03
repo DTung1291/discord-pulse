@@ -34,6 +34,7 @@ function escapeHtml(value) {
 let messageVolumeChart;
 let memberGrowthChart;
 let ambassadorCompareChart;
+let ambassadorInviteTrendChart;
 let leaveExplorerChart;
 const FULL_REFRESH_MS = 30000;
 const CHANNEL_RANKING_REFRESH_MS = 5000;
@@ -323,6 +324,146 @@ function renderInviteRanking(rows) {
     .join("");
 }
 
+function getAmbassadorTrendFilters() {
+  const ambassadorEl = document.getElementById("ambassador-trend-ambassador");
+  const daysEl = document.getElementById("ambassador-trend-days");
+
+  const days = Number(daysEl ? daysEl.value : 30);
+  return {
+    ambassadorId: ambassadorEl ? ambassadorEl.value : "",
+    days: Number.isFinite(days) && days > 0 ? days : 30,
+  };
+}
+
+function updateAmbassadorTrendFilterOptions(ambassadorRows) {
+  const selectEl = document.getElementById("ambassador-trend-ambassador");
+  if (!selectEl) {
+    return;
+  }
+
+  const prevValue = selectEl.value;
+  const availableIds = new Set(
+    (ambassadorRows || []).map((row) => String(row.ambassador_id || "")).filter(Boolean)
+  );
+  const options = [
+    '<option value="">All ambassadors</option>',
+    ...(ambassadorRows || [])
+      .map((row) => ({
+        id: String(row.ambassador_id || ""),
+        name: String(row.ambassador_name || `User ${row.ambassador_id || ""}`),
+      }))
+      .filter((row) => row.id)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((row) => `<option value="${escapeHtml(row.id)}">${escapeHtml(row.name)} (${escapeHtml(row.id)})</option>`),
+  ];
+
+  selectEl.innerHTML = options.join("");
+  selectEl.value = availableIds.has(prevValue) ? prevValue : "";
+}
+
+function renderAmbassadorInviteTrendChart(rows, ambassadorId, days) {
+  const ctx = document.getElementById("ambassadorInviteTrendChart");
+  const emptyEl = document.getElementById("ambassador-trend-empty");
+
+  if (ambassadorInviteTrendChart) {
+    ambassadorInviteTrendChart.destroy();
+  }
+
+  if (!ctx || !rows.length) {
+    if (emptyEl) {
+      emptyEl.hidden = false;
+      emptyEl.textContent = `No invite trend data for ${days} days${ambassadorId ? " and selected ambassador" : ""}.`;
+    }
+    return;
+  }
+
+  if (emptyEl) {
+    emptyEl.hidden = true;
+  }
+
+  const labels = rows.map((row) => `${row.snapshot_day} - ${row.ambassador_name}`);
+  const totals = rows.map((row) => Number(row.total_uses || 0));
+  const deltas = rows.map((row) => Number(row.daily_delta || 0));
+
+  ambassadorInviteTrendChart = new Chart(ctx, {
+    data: {
+      labels,
+      datasets: [
+        {
+          type: "line",
+          label: "Total Uses",
+          data: totals,
+          borderColor: "#2ec5b6",
+          backgroundColor: "rgba(46, 197, 182, 0.2)",
+          tension: 0.2,
+          yAxisID: "y",
+        },
+        {
+          type: "bar",
+          label: "Daily Delta",
+          data: deltas,
+          backgroundColor: "rgba(239, 131, 84, 0.75)",
+          borderRadius: 5,
+          yAxisID: "y1",
+        },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: "#e7ecf8" } },
+      },
+      scales: {
+        x: { ticks: { color: "#a5b1ca" }, grid: { color: "#223052" } },
+        y: {
+          position: "left",
+          ticks: { color: "#a5b1ca" },
+          grid: { color: "#223052" },
+          beginAtZero: true,
+          title: { display: true, text: "Total Uses", color: "#a5b1ca" },
+        },
+        y1: {
+          position: "right",
+          ticks: { color: "#a5b1ca" },
+          grid: { drawOnChartArea: false },
+          beginAtZero: true,
+          title: { display: true, text: "Daily Delta", color: "#a5b1ca" },
+        },
+      },
+    },
+  });
+}
+
+async function loadAmbassadorInviteTrend() {
+  const { ambassadorId, days } = getAmbassadorTrendFilters();
+  const query = new URLSearchParams({ days: String(days) });
+  if (ambassadorId) {
+    query.set("ambassadorId", ambassadorId);
+  }
+
+  const rows = await getJson(`/api/ambassador-invite-history?${query.toString()}`);
+  renderAmbassadorInviteTrendChart(rows || [], ambassadorId, days);
+}
+
+function setupAmbassadorTrendControls() {
+  const ambassadorEl = document.getElementById("ambassador-trend-ambassador");
+  const daysEl = document.getElementById("ambassador-trend-days");
+
+  const onChange = () => {
+    loadAmbassadorInviteTrend().catch((error) => {
+      console.error(error);
+    });
+  };
+
+  if (ambassadorEl) {
+    ambassadorEl.addEventListener("change", onChange);
+  }
+
+  if (daysEl) {
+    daysEl.addEventListener("change", onChange);
+  }
+}
+
 function mapAmbassadorPostsById(groups) {
   const map = new Map();
   for (const group of groups || []) {
@@ -347,11 +488,13 @@ function buildAmbassadorCompareRows(rows, ambassadorPostsMap = new Map()) {
     const postGroup = ambassadorPostsMap.get(row.ambassador_id) || null;
     const posts = Number(postGroup ? postGroup.post_count : 0);
     const activeCurrent = Number(row.current_count || 0);
-    const activePerPost = posts > 0 ? Number((activeCurrent / posts).toFixed(2)) : 0;
+    const regularCount = Number(row.regular_count || 0);
+    const inviteCount = activeCurrent > 0 ? activeCurrent : regularCount;
+    const activePerPost = posts > 0 ? Number((inviteCount / posts).toFixed(2)) : 0;
     return {
       id: row.ambassador_id,
       name: row.ambassador_name || `User ${row.ambassador_id}`,
-      activeCurrent,
+      activeCurrent: inviteCount,
       posts,
       activePerPost,
     };
@@ -463,9 +606,9 @@ function renderInviteeList(listWrap, rows, statusFilter = "all", query = "") {
   }
 
   const sourceLabelMap = {
-    invite_cu: "Invite cũ",
-    invite_code_moi: "Invite qua code mới",
-    invite_khong_xac_dinh: "Không xác định",
+    invite_cu: "Legacy invite",
+    invite_code_moi: "Invite via tracked code",
+    invite_khong_xac_dinh: "Unattributed",
   };
 
   const bySource = {
@@ -546,18 +689,37 @@ function renderInviteeList(listWrap, rows, statusFilter = "all", query = "") {
 
 async function loadAmbassadorInvitees(ambassadorId, container) {
   try {
-    const rows = await getJson(
-      `/api/ambassador-invitees?ambassadorId=${encodeURIComponent(ambassadorId)}&days=0&limit=2000`
-    );
+    const [rows, breakdown] = await Promise.all([
+      getJson(`/api/ambassador-invitees?ambassadorId=${encodeURIComponent(ambassadorId)}&days=0&limit=2000`),
+      getJson(`/api/ambassador-invite-breakdown?ambassadorId=${encodeURIComponent(ambassadorId)}&days=0`),
+    ]);
+
+    const regularCount = Number(breakdown?.regular_count || 0);
+    const currentCount = Number(breakdown?.current_invites || 0);
+    const leftCount = Number(breakdown?.left_count || 0);
+    const fakeCount = Number(breakdown?.fake_count || 0);
+    const bonusCount = Number(breakdown?.bonus_count || 0);
+    const unattributedCount = Number(breakdown?.unattributed_count || 0);
 
     container.innerHTML = `
+      <div class="invitee-meta">
+        <span>current: <strong>${currentCount}</strong></span>
+        <span>regular: <strong>${regularCount}</strong></span>
+        <span>left: <strong>${leftCount}</strong></span>
+        <span>fake: <strong>${fakeCount}</strong></span>
+        <span>bonus: <strong>${bonusCount}</strong></span>
+        <span>unattributed: <strong>${unattributedCount}</strong></span>
+      </div>
+      <div class="invitee-empty" ${unattributedCount > 0 ? "" : "hidden"}>
+        ${unattributedCount} invites are not yet mapped to specific users.
+      </div>
       <div class="invitee-controls">
         <label>
           Membership
           <select class="invitee-filter-status">
-            <option value="in-server" selected>In server</option>
+            <option value="all" selected>All</option>
+            <option value="in-server">In server</option>
             <option value="left">Left</option>
-            <option value="all">All</option>
           </select>
         </label>
         <label>
@@ -766,6 +928,8 @@ async function loadDashboard() {
     await loadLeaveExplorer();
     const ambassadorPostsMap = mapAmbassadorPostsById(ambassadorPosts);
     const ambassadorInviteMap = mapAmbassadorInviteById(ambassadorInvites);
+    updateAmbassadorTrendFilterOptions(ambassadorPerformance);
+    await loadAmbassadorInviteTrend();
     renderAmbassadorCompareChart(ambassadorPerformance, ambassadorPostsMap);
     renderAmbassadorPerformance(ambassadorPerformance, ambassadorPostsMap, ambassadorInviteMap);
     updateLastUpdated();
@@ -801,7 +965,7 @@ function setupInviteTrackerSyncForm() {
     const text = inviteTextInput.value.trim();
 
     if (!ambassadorId || !text) {
-      statusEl.textContent = "Ambassador ID và Invite Tracker text là bắt buộc.";
+      statusEl.textContent = "Ambassador ID and Invite Tracker text are required.";
       statusEl.classList.remove("ok");
       statusEl.classList.add("error");
       return;
@@ -830,6 +994,7 @@ function setupInviteTrackerSyncForm() {
 async function init() {
   setupInviteTrackerSyncForm();
   setupLeaveExplorerControls();
+  setupAmbassadorTrendControls();
   await loadDashboard();
   setInterval(loadDashboard, FULL_REFRESH_MS);
   setInterval(refreshChannelRankingLive, CHANNEL_RANKING_REFRESH_MS);
