@@ -61,9 +61,7 @@ function warnIfPotentiallyEphemeralDbPath(info) {
 
 function enforcePersistentDbPathIfNeeded(info) {
   const strictMode = isTruthyEnv(process.env.STRICT_PERSISTENT_DB_PATH);
-  const allowEphemeralDb = isTruthyEnv(process.env.ALLOW_EPHEMERAL_DB);
-  const onManagedPlatform = info.runningOnRender || info.runningOnRailway;
-  const mustEnforce = strictMode || (onManagedPlatform && !allowEphemeralDb);
+  const mustEnforce = strictMode;
 
   if (!mustEnforce || !info.potentiallyEphemeral) {
     return;
@@ -74,7 +72,7 @@ function enforcePersistentDbPathIfNeeded(info) {
     [
       `[db] Refusing to start with potentially ephemeral DB_PATH on ${platformName}: ${info.resolvedPath}`,
       `[db] Set DB_PATH to a persistent disk path (example: ${info.recommendedPath}).`,
-      "[db] If you really want this for non-production/testing, set ALLOW_EPHEMERAL_DB=1.",
+      "[db] Disable strict mode (STRICT_PERSISTENT_DB_PATH=0) to allow boot with warning only.",
     ].join(" ")
   );
 }

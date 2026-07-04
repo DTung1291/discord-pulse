@@ -116,9 +116,8 @@ DB_PATH=/var/data/discord-pulse.db
 Without a persistent mount, each redeploy can reset/overwrite SQLite data.
 
 Safety controls:
-- On Railway/Render, app now refuses to start if `DB_PATH` looks ephemeral (relative path or app root path).
-- Override only for testing: `ALLOW_EPHEMERAL_DB=1`
-- Force strict mode on any platform: `STRICT_PERSISTENT_DB_PATH=1`
+- On Railway/Render, app warns if `DB_PATH` looks ephemeral (relative path or app root path).
+- To make this blocking, enable strict mode: `STRICT_PERSISTENT_DB_PATH=1`
 - Health check: `GET /api/health/db-storage`
 
 ### Run
