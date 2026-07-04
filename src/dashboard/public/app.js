@@ -36,6 +36,7 @@ let memberGrowthChart;
 let ambassadorCompareChart;
 let ambassadorInviteTrendChart;
 let leaveExplorerChart;
+let inviteExplorerChart;
 const FULL_REFRESH_MS = 30000;
 const CHANNEL_RANKING_REFRESH_MS = 5000;
 
@@ -322,6 +323,155 @@ function renderInviteRanking(rows) {
       return `<li>${label} (${row.inviter_id}) - ${row.invited_count} uses</li>`;
     })
     .join("");
+}
+
+function getInviteExplorerFilters() {
+  const daysEl = document.getElementById("invite-explorer-days");
+  const perDayLimitEl = document.getElementById("invite-explorer-per-day-limit");
+  const days = Number(daysEl ? daysEl.value : 30);
+  const perDayLimit = Number(perDayLimitEl ? perDayLimitEl.value : 30);
+
+  return {
+    days: Number.isFinite(days) && days > 0 ? days : 30,
+    perDayLimit: Number.isFinite(perDayLimit) && perDayLimit > 0 ? perDayLimit : 30,
+  };
+}
+
+function renderInviteExplorer(groups, days) {
+  const titleEl = document.getElementById("invite-explorer-title");
+  const wrap = document.getElementById("invite-explorer-wrap");
+  const chartEl = document.getElementById("inviteExplorerChart");
+
+  if (titleEl) {
+    titleEl.textContent = `Invite Explorer (${days} days)`;
+  }
+
+  if (inviteExplorerChart) {
+    inviteExplorerChart.destroy();
+  }
+
+  const chartRows = [...(groups || [])].sort((a, b) => String(a.day).localeCompare(String(b.day)));
+
+  if (chartEl) {
+    inviteExplorerChart = new Chart(chartEl, {
+      type: "bar",
+      data: {
+        labels: chartRows.map((row) => row.day),
+        datasets: [
+          {
+            label: "Invites",
+            data: chartRows.map((row) => Number(row.count || 0)),
+            backgroundColor: "rgba(46, 197, 182, 0.75)",
+            borderRadius: 6,
+          },
+        ],
+      },
+      options: {
+        plugins: { legend: { labels: { color: "#e7ecf8" } } },
+        scales: {
+          x: { ticks: { color: "#a5b1ca" }, grid: { color: "#223052" } },
+          y: { ticks: { color: "#a5b1ca" }, grid: { color: "#223052" }, beginAtZero: true },
+        },
+      },
+    });
+  }
+
+  if (!wrap) {
+    return;
+  }
+
+  if (!groups || !groups.length) {
+    wrap.innerHTML = '<div class="invitee-empty">No invite history in this period.</div>';
+    return;
+  }
+
+  const descRows = [...groups].sort((a, b) => String(b.day).localeCompare(String(a.day)));
+  wrap.innerHTML = descRows
+    .map((dayRow) => {
+      const day = escapeHtml(dayRow.day || "-");
+      const count = Number(dayRow.count || 0);
+      const inviteRows = Array.isArray(dayRow.invites) ? dayRow.invites : [];
+      const detailHtml = inviteRows.length
+        ? `
+            <div class="invitee-table-wrap">
+              <table class="invitee-table">
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Inviter</th>
+                    <th>Membership</th>
+                    <th>Messages</th>
+                    <th>Joined</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${inviteRows
+                    .map((row) => {
+                      const username = escapeHtml(row.username || row.user_id);
+                      const userId = escapeHtml(row.user_id || "-");
+                      const inviterName = escapeHtml(row.inviter_name || row.inviter_id || "unknown");
+                      const inviterId = escapeHtml(row.inviter_id || "-");
+                      const membership = Number(row.still_in_server || 0) === 1 ? "in-server" : "left";
+                      const joinedAt = row.joined_at ? new Date(row.joined_at).toLocaleString() : "-";
+                      return `
+                        <tr>
+                          <td>
+                            <div class="invitee-cell-user">${username}</div>
+                            <div class="invitee-cell-sub">${userId}</div>
+                          </td>
+                          <td>
+                            <div class="invitee-cell-user">${inviterName}</div>
+                            <div class="invitee-cell-sub">${inviterId}</div>
+                          </td>
+                          <td>${membership}</td>
+                          <td>${Number(row.total_messages || 0)}</td>
+                          <td>${escapeHtml(joinedAt)}</td>
+                        </tr>
+                      `;
+                    })
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          `
+        : '<div class="invitee-empty">No ambassador details for this day.</div>';
+
+      return `
+        <details class="leave-day-details">
+          <summary>
+            <span>${day}</span>
+            <strong>${count} invites</strong>
+          </summary>
+          <div class="leave-day-content">${detailHtml}</div>
+        </details>
+      `;
+    })
+    .join("");
+}
+
+async function loadInviteExplorer() {
+  const { days, perDayLimit } = getInviteExplorerFilters();
+  const data = await getJson(
+    `/api/invites-by-day?days=${encodeURIComponent(days)}&perDayLimit=${encodeURIComponent(perDayLimit)}`
+  );
+  renderInviteExplorer(data?.rows || [], days);
+}
+
+function setupInviteExplorerControls() {
+  const daysEl = document.getElementById("invite-explorer-days");
+  const perDayLimitEl = document.getElementById("invite-explorer-per-day-limit");
+  if (!daysEl || !perDayLimitEl) {
+    return;
+  }
+
+  const onChange = () => {
+    loadInviteExplorer().catch((error) => {
+      console.error(error);
+    });
+  };
+
+  daysEl.addEventListener("change", onChange);
+  perDayLimitEl.addEventListener("change", onChange);
 }
 
 function getAmbassadorTrendFilters() {
@@ -925,6 +1075,7 @@ async function loadDashboard() {
     renderMemberGrowth(growth);
     renderChannelRanking(rankings);
     renderInviteRanking(inviteRankings);
+    await loadInviteExplorer();
     await loadLeaveExplorer();
     const ambassadorPostsMap = mapAmbassadorPostsById(ambassadorPosts);
     const ambassadorInviteMap = mapAmbassadorInviteById(ambassadorInvites);
@@ -993,6 +1144,7 @@ function setupInviteTrackerSyncForm() {
 
 async function init() {
   setupInviteTrackerSyncForm();
+  setupInviteExplorerControls();
   setupLeaveExplorerControls();
   setupAmbassadorTrendControls();
   await loadDashboard();

@@ -30,6 +30,14 @@ function toPositiveInt(value, fallback) {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
+function toBool(value, fallback = false) {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
+}
+
 function getAmbassadorMembers(guild, ambassadorRoleIds) {
   const roles = ambassadorRoleIds.length
     ? ambassadorRoleIds
@@ -376,6 +384,103 @@ async function backfillAmbassadorPosts(guild, queries, channelId, maxMessages) {
   }
 }
 
+async function backfillMessageHistory(guild, queries, db, options = {}) {
+  const enabled = toBool(options.enabled, true);
+  if (!enabled) {
+    return;
+  }
+
+  const maxChannels = toPositiveInt(options.maxChannels, 20);
+  const maxMessagesPerChannel = toPositiveInt(options.maxMessagesPerChannel, 500);
+  const includedChannelIds = Array.isArray(options.channelIds) ? options.channelIds : [];
+
+  const existsStmt = db.prepare(`
+    SELECT 1
+    FROM message_events
+    WHERE user_id = ? AND channel_id = ? AND created_at = ?
+    LIMIT 1
+  `);
+
+  try {
+    const channels = await guild.channels.fetch();
+    let targetChannels = [...channels.values()].filter(
+      (channel) => channel && channel.isTextBased() && !channel.isThread()
+    );
+
+    if (includedChannelIds.length) {
+      const allow = new Set(includedChannelIds);
+      targetChannels = targetChannels.filter((channel) => allow.has(channel.id));
+    }
+
+    targetChannels = targetChannels.slice(0, maxChannels);
+
+    let scanned = 0;
+    let saved = 0;
+
+    for (const channel of targetChannels) {
+      let before;
+      let scannedInChannel = 0;
+
+      while (scannedInChannel < maxMessagesPerChannel) {
+        const batchLimit = Math.min(100, maxMessagesPerChannel - scannedInChannel);
+        const batch = await channel.messages
+          .fetch({
+            limit: batchLimit,
+            ...(before ? { before } : {}),
+          })
+          .catch(() => null);
+
+        if (!batch || !batch.size) {
+          break;
+        }
+
+        scannedInChannel += batch.size;
+        scanned += batch.size;
+
+        for (const message of batch.values()) {
+          if (message.author.bot) {
+            continue;
+          }
+
+          const createdAt = message.createdAt.toISOString();
+          const exists = existsStmt.get(message.author.id, channel.id, createdAt);
+          if (exists) {
+            continue;
+          }
+
+          queries.trackMessage({
+            userId: message.author.id,
+            channelId: channel.id,
+            channelName: channel.name || channel.id,
+            createdAt,
+          });
+
+          queries.trackMemberProfile({
+            userId: message.author.id,
+            username: message.author.tag,
+            avatarUrl: message.author.avatarURL() || null,
+            capturedAt: createdAt,
+            source: "message_backfill",
+          });
+
+          saved += 1;
+        }
+
+        before = batch.last().id;
+        if (batch.size < batchLimit) {
+          break;
+        }
+      }
+    }
+
+    console.log(
+      `Message backfill done: channels ${targetChannels.length}, scanned ${scanned}, stored ${saved}`
+    );
+  } catch (error) {
+    console.warn("Message backfill failed:", error.message);
+  }
+}
+
 async function startBot(options = {}) {
   const token = options.token || process.env.DISCORD_TOKEN;
   const guildId = options.guildId || process.env.GUILD_ID;
@@ -412,6 +517,13 @@ async function startBot(options = {}) {
   const ambassadorRoleIds = parseCsvIds(process.env.AMBASSADOR_ROLE_IDS);
   const ambassadorInviteChannelId = process.env.AMBASSADOR_INVITE_CHANNEL_ID;
   const ambassadorPostBackfillLimit = toPositiveInt(process.env.AMBASSADOR_POST_BACKFILL_LIMIT, 2000);
+  const messageBackfillEnabled = toBool(process.env.MESSAGE_BACKFILL_ON_STARTUP, true);
+  const messageBackfillChannelIds = parseCsvIds(process.env.MESSAGE_BACKFILL_CHANNEL_IDS);
+  const messageBackfillMaxChannels = toPositiveInt(process.env.MESSAGE_BACKFILL_MAX_CHANNELS, 20);
+  const messageBackfillLimitPerChannel = toPositiveInt(
+    process.env.MESSAGE_BACKFILL_LIMIT_PER_CHANNEL,
+    500
+  );
 
   client.once("clientReady", async () => {
     console.log(`Bot logged in as ${client.user.tag}`);
@@ -437,6 +549,12 @@ async function startBot(options = {}) {
         context.ambassadorPostChannelId,
         ambassadorPostBackfillLimit
       );
+      await backfillMessageHistory(guild, queries, db, {
+        enabled: messageBackfillEnabled,
+        channelIds: messageBackfillChannelIds,
+        maxChannels: messageBackfillMaxChannels,
+        maxMessagesPerChannel: messageBackfillLimitPerChannel,
+      });
     }
 
     await registerGuildSlashCommands(client, guildId).catch((error) => {

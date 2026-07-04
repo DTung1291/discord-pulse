@@ -890,6 +890,59 @@ function createQueries(db) {
     return { joins, leaves };
   }
 
+  function getInvitesByDay(days = 30) {
+    return db
+      .prepare(
+        `
+        SELECT DATE(joined_at) AS day, COUNT(*) AS count
+        FROM join_events
+        WHERE joined_at >= datetime('now', ?)
+        GROUP BY DATE(joined_at)
+      `
+      )
+      .all(`-${days} days`);
+  }
+
+  function getInvitesByDayDetails(days = 30, perDayLimit = 30) {
+    return db
+      .prepare(
+        `
+        WITH ranked AS (
+          SELECT
+            DATE(je.joined_at) AS day,
+            je.user_id,
+            COALESCE(m.username, je.user_id) AS username,
+            je.inviter_id,
+            COALESCE(inviter.username, je.inviter_id) AS inviter_name,
+            je.joined_at,
+            CASE WHEN m.left_at IS NULL THEN 1 ELSE 0 END AS still_in_server,
+            COALESCE((SELECT COUNT(*) FROM message_events me WHERE me.user_id = je.user_id), 0) AS total_messages,
+            COALESCE((SELECT MAX(me.created_at) FROM message_events me WHERE me.user_id = je.user_id), '') AS last_message_at,
+            ROW_NUMBER() OVER (PARTITION BY DATE(je.joined_at) ORDER BY je.joined_at DESC) AS rn
+          FROM join_events je
+          LEFT JOIN members m ON m.user_id = je.user_id
+          LEFT JOIN members inviter ON inviter.user_id = je.inviter_id
+          WHERE je.joined_at >= datetime('now', ?)
+            AND COALESCE(m.is_bot, 0) = 0
+        )
+        SELECT
+          day,
+          user_id,
+          username,
+          inviter_id,
+          inviter_name,
+          joined_at,
+          still_in_server,
+          total_messages,
+          last_message_at
+        FROM ranked
+        WHERE rn <= ?
+        ORDER BY day DESC, joined_at DESC
+      `
+      )
+      .all(`-${days} days`, perDayLimit);
+  }
+
   function enrichLeaversTrust(rows) {
     function normalizedUsernameKey(value) {
       return String(value || "")
@@ -1191,6 +1244,8 @@ function createQueries(db) {
     getChannelRankings,
     getActiveUsers,
     getGhostMembers,
+    getInvitesByDay,
+    getInvitesByDayDetails,
     getInviteLeaderboard,
     getInviteSnapshotLeaderboard,
     getAmbassadorInviteDailyHistory,

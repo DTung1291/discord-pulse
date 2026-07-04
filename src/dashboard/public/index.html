@@ -39,6 +39,35 @@
         </article>
 
         <article class="panel full">
+          <h2 id="invite-explorer-title">Invite Explorer (30 days)</h2>
+          <p class="panel-subnote">Daily invite changes grouped by day, with ambassador breakdown.</p>
+          <div class="leave-explorer-controls">
+            <label>
+              Window
+              <select id="invite-explorer-days">
+                <option value="7">Last 7 days</option>
+                <option value="14">Last 14 days</option>
+                <option value="30" selected>Last 30 days</option>
+                <option value="60">Last 60 days</option>
+              </select>
+            </label>
+            <label>
+              Details per day
+              <select id="invite-explorer-per-day-limit">
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="30" selected>30</option>
+                <option value="50">50</option>
+              </select>
+            </label>
+          </div>
+          <div class="chart-wrap leave-explorer-chart-wrap">
+            <canvas id="inviteExplorerChart"></canvas>
+          </div>
+          <div id="invite-explorer-wrap"></div>
+        </article>
+
+        <article class="panel full">
           <h2 id="leave-explorer-title">Leave Explorer (30 days)</h2>
           <p class="panel-subnote">Click each day to expand leave accounts with trust signals.</p>
           <div class="leave-explorer-controls">

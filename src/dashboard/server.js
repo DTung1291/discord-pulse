@@ -57,7 +57,12 @@ function startDashboard(options = {}) {
 
   app.use(express.json());
   app.use((req, res, next) => {
-    if (req.path === "/app.js" || req.path === "/style.css") {
+    if (
+      req.path === "/" ||
+      req.path === "/index.html" ||
+      req.path === "/app.js" ||
+      req.path === "/style.css"
+    ) {
       res.setHeader("Cache-Control", "no-store");
     }
     next();
@@ -130,6 +135,36 @@ function startDashboard(options = {}) {
         day,
         count,
         leavers: detailMap.get(day) || [],
+      }));
+
+    res.json({
+      days,
+      per_day_limit: perDayLimit,
+      rows,
+    });
+  });
+
+  app.get("/api/invites-by-day", (req, res) => {
+    const days = toInt(req.query.days, 30);
+    const perDayLimit = toInt(req.query.perDayLimit, 30);
+    const dayCounts = new Map((queries.getInvitesByDay(days) || []).map((row) => [row.day, Number(row.count || 0)]));
+    const detailRows = queries.getInvitesByDayDetails(days, perDayLimit);
+
+    const detailMap = new Map();
+    for (const row of detailRows) {
+      const day = String(row.day || "");
+      if (!detailMap.has(day)) {
+        detailMap.set(day, []);
+      }
+      detailMap.get(day).push(row);
+    }
+
+    const rows = Array.from(dayCounts.entries())
+      .sort((a, b) => String(b[0]).localeCompare(String(a[0])))
+      .map(([day, count]) => ({
+        day,
+        count,
+        invites: detailMap.get(day) || [],
       }));
 
     res.json({
