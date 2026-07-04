@@ -2,7 +2,7 @@ require("dotenv").config();
 
 const path = require("path");
 const express = require("express");
-const { initDatabase } = require("../db/schema");
+const { initDatabase, getDbRuntimeInfo } = require("../db/schema");
 const { createQueries } = require("../db/queries");
 
 function toInt(value, fallback) {
@@ -72,6 +72,20 @@ function startDashboard(options = {}) {
   app.get("/api/summary", (req, res) => {
     const days = toInt(req.query.days, 7);
     res.json(queries.getSummary(days));
+  });
+
+  app.get("/api/health/db-storage", (_req, res) => {
+    const info = getDbRuntimeInfo(process.env.DB_PATH);
+    res.json({
+      platform: info.platform,
+      configured_path: info.configuredPath,
+      resolved_path: info.resolvedPath,
+      potentially_ephemeral: info.potentiallyEphemeral,
+      recommended_path: info.recommendedPath,
+      strict_mode: ["1", "true", "yes", "on"].includes(
+        String(process.env.STRICT_PERSISTENT_DB_PATH || "").trim().toLowerCase()
+      ),
+    });
   });
 
   app.get("/api/message-volume", (req, res) => {

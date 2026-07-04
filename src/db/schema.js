@@ -2,8 +2,88 @@ const fs = require("fs");
 const path = require("path");
 const Database = require("better-sqlite3");
 
+function isTruthyEnv(value) {
+  if (!value) {
+    return false;
+  }
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
+}
+
+function getDbRuntimeInfo(rawDbPath) {
+  const runningOnRender = Boolean(process.env.RENDER);
+  const runningOnRailway = Boolean(process.env.RAILWAY_PROJECT_ID || process.env.RAILWAY_ENVIRONMENT_ID);
+  const platform = runningOnRender ? "render" : runningOnRailway ? "railway" : "other";
+  const configuredPath = rawDbPath || "./data/discord-pulse.db";
+  const resolvedPath = path.resolve(configuredPath);
+  const isAbsoluteConfiguredPath = Boolean(rawDbPath && path.isAbsolute(rawDbPath));
+  const looksLikeEphemeralAbsolutePath = runningOnRender
+    ? resolvedPath.startsWith("/opt/render/project")
+    : runningOnRailway
+      ? resolvedPath.startsWith("/app/") || resolvedPath === "/app"
+      : false;
+  const recommendedPath = runningOnRender ? "/var/data/discord-pulse.db" : "/data/discord-pulse.db";
+
+  return {
+    platform,
+    runningOnRender,
+    runningOnRailway,
+    configuredPath,
+    resolvedPath,
+    isAbsoluteConfiguredPath,
+    looksLikeEphemeralAbsolutePath,
+    recommendedPath,
+    potentiallyEphemeral: !isAbsoluteConfiguredPath || looksLikeEphemeralAbsolutePath,
+  };
+}
+
+function warnIfPotentiallyEphemeralDbPath(info) {
+  const runningOnRender = Boolean(process.env.RENDER);
+  const runningOnRailway = Boolean(process.env.RAILWAY_PROJECT_ID || process.env.RAILWAY_ENVIRONMENT_ID);
+  const disableWarning = isTruthyEnv(process.env.DISABLE_EPHEMERAL_DB_WARNING);
+
+  if (disableWarning || (!runningOnRender && !runningOnRailway)) {
+    return;
+  }
+
+  if (!info.potentiallyEphemeral) {
+    return;
+  }
+
+  const platformName = runningOnRender ? "Render" : "Railway";
+  console.warn(
+    [
+      `[db] Warning: DB_PATH may be on ephemeral storage (${info.resolvedPath}).`,
+      `[db] On ${platformName}, set DB_PATH to a persistent disk path, for example: ${info.recommendedPath}`,
+      "[db] Otherwise each auto-deploy can reset or overwrite SQLite data.",
+    ].join(" ")
+  );
+}
+
+function enforcePersistentDbPathIfNeeded(info) {
+  const strictMode = isTruthyEnv(process.env.STRICT_PERSISTENT_DB_PATH);
+  const allowEphemeralDb = isTruthyEnv(process.env.ALLOW_EPHEMERAL_DB);
+  const onManagedPlatform = info.runningOnRender || info.runningOnRailway;
+  const mustEnforce = strictMode || (onManagedPlatform && !allowEphemeralDb);
+
+  if (!mustEnforce || !info.potentiallyEphemeral) {
+    return;
+  }
+
+  const platformName = info.runningOnRender ? "Render" : "Railway";
+  throw new Error(
+    [
+      `[db] Refusing to start with potentially ephemeral DB_PATH on ${platformName}: ${info.resolvedPath}`,
+      `[db] Set DB_PATH to a persistent disk path (example: ${info.recommendedPath}).`,
+      "[db] If you really want this for non-production/testing, set ALLOW_EPHEMERAL_DB=1.",
+    ].join(" ")
+  );
+}
+
 function initDatabase(dbPath) {
-  const resolvedPath = path.resolve(dbPath || "./data/discord-pulse.db");
+  const info = getDbRuntimeInfo(dbPath);
+  warnIfPotentiallyEphemeralDbPath(info);
+  enforcePersistentDbPathIfNeeded(info);
+  const resolvedPath = info.resolvedPath;
   const dir = path.dirname(resolvedPath);
 
   if (!fs.existsSync(dir)) {
@@ -135,4 +215,5 @@ function initDatabase(dbPath) {
 
 module.exports = {
   initDatabase,
+  getDbRuntimeInfo,
 };

@@ -97,6 +97,30 @@ Notes:
 - `AMBASSADOR_POST_CHANNEL_ID` is the channel to track ambassador post content. Defaults to `1518242290982719698`.
 - `AMBASSADOR_POST_BACKFILL_LIMIT` controls how many old messages are scanned on startup to backfill ambassador posts.
 
+### Important: Railway / Render Auto-Deploy + SQLite
+
+If your app auto-deploys on each git push, **do not keep SQLite at a relative path** like `./data/discord-pulse.db` unless that folder is on a persistent volume.
+
+- Railway: attach a Volume, mount it (for example `/data`), then set:
+
+```env
+DB_PATH=/data/discord-pulse.db
+```
+
+- Render: create a Disk, mount it (for example `/var/data`), then set:
+
+```env
+DB_PATH=/var/data/discord-pulse.db
+```
+
+Without a persistent mount, each redeploy can reset/overwrite SQLite data.
+
+Safety controls:
+- On Railway/Render, app now refuses to start if `DB_PATH` looks ephemeral (relative path or app root path).
+- Override only for testing: `ALLOW_EPHEMERAL_DB=1`
+- Force strict mode on any platform: `STRICT_PERSISTENT_DB_PATH=1`
+- Health check: `GET /api/health/db-storage`
+
 ### Run
 
 ```bash
@@ -109,6 +133,27 @@ npm run dashboard
 ```
 
 `npm start` now auto-cleans port `3000` before boot, so you do not need to manually kill previous dashboard processes.
+
+## Deploy-Safe Backup/Restore
+
+Use the built-in deploy-safe script to back up SQLite before deploy, then auto-restore DB if deploy fails.
+
+```bash
+# default: backup DB, then run "git pull --ff-only && npm ci"
+npm run deploy:safe
+
+# custom deploy command
+DEPLOY_CMD="git pull --ff-only && npm ci && npm start" npm run deploy:safe
+
+# restore latest DB backup manually
+bash scripts/deploy-safe.sh --restore latest
+```
+
+Optional environment variables:
+- `DB_PATH` (or `DB_PATH` in `.env`) — source DB location
+- `BACKUP_BASE_DIR` — where backups are stored (default `./backups/db`)
+- `KEEP_BACKUPS` — number of backup folders retained (default `20`)
+- `MESSAGE_BACKFILL_ON_STARTUP`, `MESSAGE_BACKFILL_CHANNEL_IDS`, `MESSAGE_BACKFILL_MAX_CHANNELS`, `MESSAGE_BACKFILL_LIMIT_PER_CHANNEL` — startup message backfill tuning
 
 ## Dashboard
 
