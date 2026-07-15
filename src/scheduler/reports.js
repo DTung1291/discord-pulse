@@ -126,9 +126,7 @@ function buildAmbassadorInviteesContent(queries, ambassadorId, days = 30, limit 
     attributionLine,
     rows
       .map((row, idx) => {
-        const totalMessages = Number(row.total_messages || 0);
-        const isVerifiedMember = totalMessages >= 3;
-        const status = isVerifiedMember ? "Verified member" : "Unverified member";
+        const status = row.still_in_server ? "Current member" : "Left member";
         const membership = row.still_in_server ? "in-server" : "left";
         return `${idx + 1}. <@${row.user_id}> (${membership}) - ${status} - total messages: ${row.total_messages} - joined: ${row.joined_at}`;
       })

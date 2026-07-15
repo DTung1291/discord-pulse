@@ -7,6 +7,7 @@
   "scripts": {
     "prestart": "sh -c 'if command -v lsof >/dev/null 2>&1; then (lsof -ti tcp:${PORT:-3000} | xargs kill) >/dev/null 2>&1 || true; fi; if command -v pkill >/dev/null 2>&1; then pkill -f \"node src/index.js\" >/dev/null 2>&1 || true; fi'",
     "start": "node src/index.js",
+    "stop": "sh -c 'if command -v pkill >/dev/null 2>&1; then pkill -f \"node src/index.js\" >/dev/null 2>&1 || true; fi'",
     "bot": "node src/bot/index.js",
     "dashboard": "node src/dashboard/server.js",
     "deploy:safe": "bash ./scripts/deploy-safe.sh"
