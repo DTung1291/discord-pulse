@@ -102,11 +102,12 @@ function getSlashCommands() {
       .toJSON(),
     new SlashCommandBuilder()
       .setName("pulse-ambassador-users")
-      .setDescription("Show users invited by an ambassador and their ghost/active status")
+      .setDescription("Show users invited by an ambassador and their verified/unverified status")
       .addUserOption((option) =>
         option
           .setName("member")
-          .setDescription("Ambassador member to inspect (default: you)")
+          .setDescription("Ambassador member to inspect")
+          .setRequired(true)
       )
       .addIntegerOption((option) =>
         option

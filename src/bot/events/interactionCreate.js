@@ -44,7 +44,18 @@ async function onInteractionCreate(interaction, context) {
   }
 
   // Acknowledge quickly to avoid Discord's 3-second timeout for slower commands.
-  await interaction.deferReply({ flags: 64 });
+  if (!interaction.deferred && !interaction.replied) {
+    try {
+      await interaction.deferReply({ flags: 64 });
+    } catch (error) {
+      const code = Number(error && error.code);
+      if (code === 40060 || code === 10062) {
+        // 40060: already acknowledged, 10062: unknown/expired interaction.
+        return;
+      }
+      throw error;
+    }
+  }
 
   if (interaction.commandName === "pulse-summary") {
     const days = interaction.options.getInteger("days") || 7;
@@ -88,10 +99,20 @@ async function onInteractionCreate(interaction, context) {
 
   if (interaction.commandName === "pulse-ambassador-users") {
     const selectedUser = interaction.options.getUser("member");
-    const ambassadorId = selectedUser ? selectedUser.id : interaction.user.id;
     const days = interaction.options.getInteger("days") || 30;
     const limit = interaction.options.getInteger("limit") || 20;
-    const content = buildAmbassadorInviteesContent(queries, ambassadorId, days, limit);
+    if (!selectedUser) {
+      await interaction.editReply({
+        content: "Please provide member to search invitees.",
+      });
+      return;
+    }
+
+    const ambassadorId = selectedUser.id;
+    const matchedAmbassadorLine = `Matched ambassador: ${selectedUser.username} (<@${selectedUser.id}>)`;
+
+    const contentBody = buildAmbassadorInviteesContent(queries, ambassadorId, days, limit);
+    const content = matchedAmbassadorLine ? `${matchedAmbassadorLine}\n${contentBody}` : contentBody;
     await interaction.editReply({ content });
     return;
   }

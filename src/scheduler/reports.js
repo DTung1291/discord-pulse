@@ -95,12 +95,16 @@ function buildAmbassadorPerformanceContent(queries, days = 7, limit = 20) {
 }
 
 function buildAmbassadorInviteesContent(queries, ambassadorId, days = 30, limit = 20) {
-  const breakdown = queries.getAmbassadorInviteBreakdown(ambassadorId, 0) || {};
+  const breakdown = queries.getAmbassadorInviteBreakdown(ambassadorId, days) || {};
   const regular = Number(breakdown.regular_count || 0);
   const left = Number(breakdown.left_count || 0);
   const current = Number(breakdown.current_count || 0);
   const unattributed = Number(breakdown.unattributed_count || 0);
-  const breakdownLine = `You currently have **${current}** invites. (**${regular}** regular, **${left}** left, **0** fake, **0** bonus)`;
+  const breakdownLine = `Breakdown (${days}d): **${current}** current, **${left}** left, **${regular}** regular uses, **0** fake, **0** bonus`;
+  const inviteCodes = queries.listAmbassadorInviteCodes(ambassadorId, 20);
+  const inviteCodeLine = inviteCodes.length
+    ? `Invite codes: ${inviteCodes.map((row) => `${row.code} (${row.uses})`).join(", ")}`
+    : "Invite codes: none";
   const attributionLine =
     unattributed > 0
       ? `Note: **${unattributed}** regular invites are historical and not yet mapped into left/current split in this bot DB.`
@@ -110,7 +114,7 @@ function buildAmbassadorInviteesContent(queries, ambassadorId, days = 30, limit 
   const title = `**Ambassador Invitees (${days}d) - <@${ambassadorId}>**`;
 
   if (!rows.length) {
-    return [title, breakdownLine, attributionLine, "No attributed joined users in this period."]
+    return [title, breakdownLine, inviteCodeLine, attributionLine, "No attributed joined users in this period."]
       .filter(Boolean)
       .join("\n");
   }
@@ -118,11 +122,13 @@ function buildAmbassadorInviteesContent(queries, ambassadorId, days = 30, limit 
   return [
     title,
     breakdownLine,
+    inviteCodeLine,
     attributionLine,
     rows
       .map((row, idx) => {
-        const isGhost = Number(row.total_messages || 0) === 0;
-        const status = isGhost ? "GHOST" : "ACTIVE";
+        const totalMessages = Number(row.total_messages || 0);
+        const isVerifiedMember = totalMessages >= 3;
+        const status = isVerifiedMember ? "Verified member" : "Unverified member";
         const membership = row.still_in_server ? "in-server" : "left";
         return `${idx + 1}. <@${row.user_id}> (${membership}) - ${status} - total messages: ${row.total_messages} - joined: ${row.joined_at}`;
       })

@@ -202,7 +202,7 @@ The bot registers guild slash commands automatically on startup:
 - `/pulse-weekly` — weekly report with invite/channel/ghost stats
 - `/pulse-ghosts [days]` — inactive members list
 - `/pulse-ambassadors [days]` — ambassador invite performance leaderboard
-- `/pulse-ambassador-users [member] [days] [limit]` — list users invited by an ambassador with ghost/active status
+- `/pulse-ambassador-users [member] [days] [limit]` — list users invited by an ambassador with verified/unverified status (member is required). Response also includes ambassador invite-code list with current uses.
 - `/pulse-leavers [days] [limit]` — list members who left recently with trust signals (risk score, avatar, name/id match, username-change count, inviter)
 - `/pulse-leaves-daily [days]` — show leave counts grouped by day
 
