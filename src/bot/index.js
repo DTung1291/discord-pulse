@@ -123,6 +123,13 @@ function getSlashCommands() {
           .setMinValue(1)
           .setMaxValue(30)
       )
+      .addIntegerOption((option) =>
+        option
+          .setName("page")
+          .setDescription("Page number (1-100)")
+          .setMinValue(1)
+          .setMaxValue(100)
+      )
       .toJSON(),
     new SlashCommandBuilder()
       .setName("pulse-leavers")

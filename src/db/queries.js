@@ -910,8 +910,27 @@ function createQueries(db) {
     };
   }
 
-  function getAmbassadorInvitees(ambassadorId, days = 30, limit = 20) {
+  function getAmbassadorInviteesCount(ambassadorId, days = 30) {
     const hasDaysFilter = Number(days) > 0;
+    const row = db
+      .prepare(
+        `
+        SELECT COUNT(*) AS total
+        FROM members m
+        WHERE m.inviter_id = ?
+          AND COALESCE(m.is_bot, 0) = 0
+          AND (? = 0 OR m.joined_at >= datetime('now', ?))
+      `
+      )
+      .get(ambassadorId, hasDaysFilter ? 1 : 0, `-${days} days`);
+
+    return Number(row?.total || 0);
+  }
+
+  function getAmbassadorInvitees(ambassadorId, days = 30, limit = 20, offset = 0) {
+    const hasDaysFilter = Number(days) > 0;
+    const safeLimit = Number(limit) > 0 ? Math.min(Number(limit), 100) : 20;
+    const safeOffset = Number(offset) >= 0 ? Math.floor(Number(offset)) : 0;
     return db
       .prepare(
         `
@@ -949,9 +968,10 @@ function createQueries(db) {
           AND (? = 0 OR m.joined_at >= datetime('now', ?))
         ORDER BY m.joined_at DESC
         LIMIT ?
+        OFFSET ?
       `
       )
-      .all(ambassadorId, hasDaysFilter ? 1 : 0, `-${days} days`, limit);
+      .all(ambassadorId, hasDaysFilter ? 1 : 0, `-${days} days`, safeLimit, safeOffset);
   }
 
   function getMemberGrowth(days = 30) {
@@ -1343,6 +1363,7 @@ function createQueries(db) {
     getAmbassadorInviteDailyHistory,
     getAmbassadorPerformance,
     getAmbassadorInviteBreakdown,
+    getAmbassadorInviteesCount,
     getAmbassadorInvitees,
     getAmbassadorPostsByChannel,
     getMemberGrowth,

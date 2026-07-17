@@ -94,8 +94,15 @@ function buildAmbassadorPerformanceContent(queries, days = 7, limit = 20) {
   ].join("\n");
 }
 
-function buildAmbassadorInviteesContent(queries, ambassadorId, days = 30, limit = 20) {
+function buildAmbassadorInviteesContent(queries, ambassadorId, days = 30, limit = 20, page = 1) {
   const MAX_DISCORD_CONTENT_LENGTH = 1900;
+  const safeLimit = Number(limit) > 0 ? Math.min(Number(limit), 30) : 20;
+  const requestedPage = Number(page) > 0 ? Math.floor(Number(page)) : 1;
+  const totalInvitees = queries.getAmbassadorInviteesCount(ambassadorId, days);
+  const totalPages = Math.max(1, Math.ceil(totalInvitees / safeLimit));
+  const safePage = Math.min(requestedPage, totalPages);
+  const offset = (safePage - 1) * safeLimit;
+
   const breakdown = queries.getAmbassadorInviteBreakdown(ambassadorId, days) || {};
   const regular = Number(breakdown.regular_count || 0);
   const left = Number(breakdown.left_count || 0);
@@ -111,9 +118,14 @@ function buildAmbassadorInviteesContent(queries, ambassadorId, days = 30, limit 
       ? `Note: **${unattributed}** regular invites are historical and not yet mapped into left/current split in this bot DB.`
       : null;
 
-  const rows = queries.getAmbassadorInvitees(ambassadorId, days, limit);
+  const rows = queries.getAmbassadorInvitees(ambassadorId, days, safeLimit, offset);
   const title = `**Ambassador Invitees (${days}d) - <@${ambassadorId}>**`;
-  const headerLines = [title, breakdownLine, inviteCodeLine, attributionLine].filter(Boolean);
+  const pagingLine = `Page ${safePage}/${totalPages} - showing ${rows.length}/${totalInvitees} users (limit ${safeLimit})`;
+  const nextPageHint =
+    safePage < totalPages
+      ? `Next page: run this command with page=${safePage + 1}`
+      : null;
+  const headerLines = [title, pagingLine, breakdownLine, inviteCodeLine, attributionLine].filter(Boolean);
 
   if (!rows.length) {
     return [...headerLines, "No attributed joined users in this period."]
@@ -139,6 +151,13 @@ function buildAmbassadorInviteesContent(queries, ambassadorId, days = 30, limit 
       break;
     }
     lines.push(nextLine);
+  }
+
+  if (nextPageHint) {
+    const tentative = [...lines, nextPageHint].join("\n");
+    if (tentative.length <= MAX_DISCORD_CONTENT_LENGTH) {
+      lines.push(nextPageHint);
+    }
   }
 
   return lines.join("\n");

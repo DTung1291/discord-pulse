@@ -101,6 +101,7 @@ async function onInteractionCreate(interaction, context) {
     const selectedUser = interaction.options.getUser("member");
     const days = interaction.options.getInteger("days") || 30;
     const limit = interaction.options.getInteger("limit") || 20;
+    const page = interaction.options.getInteger("page") || 1;
     if (!selectedUser) {
       await interaction.editReply({
         content: "Please provide member to search invitees.",
@@ -111,7 +112,7 @@ async function onInteractionCreate(interaction, context) {
     const ambassadorId = selectedUser.id;
     const matchedAmbassadorLine = `Matched ambassador: ${selectedUser.username} (<@${selectedUser.id}>)`;
 
-    const contentBody = buildAmbassadorInviteesContent(queries, ambassadorId, days, limit);
+    const contentBody = buildAmbassadorInviteesContent(queries, ambassadorId, days, limit, page);
     const content = matchedAmbassadorLine ? `${matchedAmbassadorLine}\n${contentBody}` : contentBody;
     await interaction.editReply({ content });
     return;
