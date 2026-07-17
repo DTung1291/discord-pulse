@@ -95,6 +95,7 @@ function buildAmbassadorPerformanceContent(queries, days = 7, limit = 20) {
 }
 
 function buildAmbassadorInviteesContent(queries, ambassadorId, days = 30, limit = 20) {
+  const MAX_DISCORD_CONTENT_LENGTH = 1900;
   const breakdown = queries.getAmbassadorInviteBreakdown(ambassadorId, days) || {};
   const regular = Number(breakdown.regular_count || 0);
   const left = Number(breakdown.left_count || 0);
@@ -112,26 +113,35 @@ function buildAmbassadorInviteesContent(queries, ambassadorId, days = 30, limit 
 
   const rows = queries.getAmbassadorInvitees(ambassadorId, days, limit);
   const title = `**Ambassador Invitees (${days}d) - <@${ambassadorId}>**`;
+  const headerLines = [title, breakdownLine, inviteCodeLine, attributionLine].filter(Boolean);
 
   if (!rows.length) {
-    return [title, breakdownLine, inviteCodeLine, attributionLine, "No attributed joined users in this period."]
+    return [...headerLines, "No attributed joined users in this period."]
       .filter(Boolean)
       .join("\n");
   }
 
-  return [
-    title,
-    breakdownLine,
-    inviteCodeLine,
-    attributionLine,
-    rows
-      .map((row, idx) => {
-        const status = row.still_in_server ? "Current member" : "Left member";
-        const membership = row.still_in_server ? "in-server" : "left";
-        return `${idx + 1}. <@${row.user_id}> (${membership}) - ${status} - total messages: ${row.total_messages} - joined: ${row.joined_at}`;
-      })
-      .join("\n"),
-  ].join("\n");
+  const rowLines = rows.map((row, idx) => {
+    const status = row.still_in_server ? "Current member" : "Left member";
+    const membership = row.still_in_server ? "in-server" : "left";
+    return `${idx + 1}. <@${row.user_id}> (${membership}) - ${status} - total messages: ${row.total_messages} - joined: ${row.joined_at}`;
+  });
+
+  const lines = [...headerLines];
+  for (let i = 0; i < rowLines.length; i += 1) {
+    const nextLine = rowLines[i];
+    const tentative = [...lines, nextLine].join("\n");
+    if (tentative.length > MAX_DISCORD_CONTENT_LENGTH) {
+      const remaining = rowLines.length - i;
+      if (remaining > 0) {
+        lines.push(`... and ${remaining} more users. Use a smaller limit to view all.`);
+      }
+      break;
+    }
+    lines.push(nextLine);
+  }
+
+  return lines.join("\n");
 }
 
 function buildRecentLeaversContent(queries, days = 7, limit = 20) {
